@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base surfaces: near-black with a faint blue undertone, evoking a dark broadcast booth
+         rather than a flat neutral black. -->
+    <color name="background">#0A0C10</color>
+    <color name="background_elevated">#0F1218</color>
+    <color name="surface">#14171E</color>
+    <color name="surface_variant">#1B1F28</color>
+    <color name="surface_card">#171A21</color>
+    <color name="stroke_hairline">#242832</color>
+    <color name="stroke_hairline_soft">#1B1F28</color>
+
+    <color name="on_surface">#F3F5F7</color>
+    <color name="on_surface_muted">#8B93A3</color>
+    <color name="on_surface_faint">#5C6273</color>
+
+    <!-- Signal amber: the "on-air" accent. Warmer and less saturated than a stock amber so it
+         reads as a broadcast tally light rather than a generic brand color. -->
+    <color name="accent">#FFB020</color>
+    <color name="accent_soft">#332A14</color>
+    <color name="primary">#FFB020</color>
+
+    <!-- Secondary accents used sparingly for status, not decoration. -->
+    <color name="live_red">#FF5252</color>
+    <color name="live_red_soft">#3A1A1A</color>
+    <color name="synced_green">#34D399</color>
+    <color name="synced_green_soft">#152E27</color>
+</resources>

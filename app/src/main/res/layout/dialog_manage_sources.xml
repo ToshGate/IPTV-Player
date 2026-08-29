@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:minHeight="120dp"
+    android:paddingHorizontal="4dp"
+    android:paddingTop="4dp">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/sourcesList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipToPadding="false"
+        android:maxHeight="420dp" />
+
+    <LinearLayout
+        android:id="@+id/noSourcesLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:alpha="0.4"
+            android:src="@drawable/ic_sources"
+            app:tint="@color/on_surface_faint"
+            tools:ignore="ContentDescription" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:text="Ainda não adicionaste nenhuma fonte."
+            android:textAppearance="@style/TextAppearance.Iptv.Body" />
+
+    </LinearLayout>
+
+</LinearLayout>

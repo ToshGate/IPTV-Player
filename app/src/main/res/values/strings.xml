@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IPTV Player</string>
+    <string name="search_hint">Pesquisar canal…</string>
+    <string name="add_source">Adicionar fonte</string>
+    <string name="empty_state_message">Sem canais. Vai a Definições para adicionar uma fonte IPTV.</string>
+</resources>

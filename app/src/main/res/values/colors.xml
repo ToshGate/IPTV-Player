@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light counterpart of the "broadcast booth" palette: clean, slightly cool whites rather
+         than stark pure white, keeping the same structural roles as the dark palette. -->
+    <color name="background">#F6F7F9</color>
+    <color name="background_elevated">#FFFFFF</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#EEF0F3</color>
+    <color name="surface_card">#FFFFFF</color>
+    <color name="stroke_hairline">#E1E4E9</color>
+    <color name="stroke_hairline_soft">#EBEDF1</color>
+
+    <color name="on_surface">#14171E</color>
+    <color name="on_surface_muted">#5B6472</color>
+    <color name="on_surface_faint">#8A93A3</color>
+
+    <!-- Signal amber, deepened from the dark theme's brighter #FFB020 so it stays legible as
+         text/icon color against light surfaces (the bright version reads fine on dark, but is
+         low-contrast on white). Same "on-air" identity, tuned for the surface it sits on. -->
+    <color name="accent">#B36E00</color>
+    <color name="accent_soft">#FBEBD2</color>
+    <color name="primary">#B36E00</color>
+
+    <!-- Secondary accents used sparingly for status, not decoration. -->
+    <color name="live_red">#D6484A</color>
+    <color name="live_red_soft">#FBEAEA</color>
+    <color name="synced_green">#1E9E6D</color>
+    <color name="synced_green_soft">#E3F7EF</color>
+</resources>

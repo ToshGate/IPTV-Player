@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <style name="Theme.IptvPlayer" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorOnPrimary">@color/background</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorSurfaceVariant">@color/surface_variant</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/on_surface_muted</item>
+        <item name="colorOutline">@color/stroke_hairline</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:statusBarColor">@color/background</item>
+        <item name="android:navigationBarColor">@color/background</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="23">@bool/light_status_bar_icons</item>
+
+        <!-- NOTE: deliberately NOT overriding shapeAppearanceCornerMedium/Small at the theme
+             root. Those are global Material slots also read by system-level popups (e.g. the
+             text-selection "Paste" bubble), and overriding them here caused that popup to
+             render oversized. Rounded corners are applied per-component instead, via
+             bg_card.xml/MaterialCardView's own cardCornerRadius, so nothing is lost visually. -->
+
+        <!-- Default body face across the app; the Sora display face is applied selectively via
+             the TextAppearance.Iptv.* styles so it keeps its impact. -->
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="fontFamily">sans-serif</item>
+
+        <item name="android:itemBackground">@color/surface</item>
+        <item name="android:textColorPrimary">@color/on_surface</item>
+        <item name="android:textColorSecondary">@color/on_surface_muted</item>
+        <!-- NOTE: deliberately NOT overriding android:colorBackgroundFloating. That attribute
+             also colors platform-level floating popups (e.g. the text-selection "Paste" bubble),
+             and setting it here made that popup render as an oversized solid rectangle covering
+             much of the screen. Popup menus already pick up correct styling from colorSurface. -->
+
+        <item name="materialAlertDialogTheme">@style/CustomDarkDialog</item>
+        <item name="alertDialogTheme">@style/CustomDarkDialog</item>
+    </style>
+
+    <!-- Name kept for continuity (it predates the light theme) — this just applies our own
+         surface colors to dialogs; it now follows light/dark like everything else rather than
+         being forced dark, since isLightTheme is no longer hardcoded here. -->
+    <style name="CustomDarkDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="android:background">@color/surface_card</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="colorSurface">@color/surface_card</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="android:textColorPrimary">@color/on_surface</item>
+        <item name="android:textColorSecondary">@color/on_surface_muted</item>
+    </style>
+
+    <style name="Theme.IptvPlayer.Player" parent="Theme.IptvPlayer">
+        <item name="android:windowFullscreen">false</item>
+        <!-- The video area itself and its floating controls are intentionally always dark
+             (standard for video players regardless of app theme, like most media apps) — those
+             are hardcoded black/white in the layout and drawables, not theme colors. The header
+             and EPG panel around the video still follow the light/dark theme choice normally. -->
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/black</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
+    </style>
+
+</resources>
