@@ -70,4 +70,4 @@ compilar normalmente, apenas sem assinatura.
 
 ## Licença
 
-[MIT](LICENSE) — © 2026 Tosh
+[MIT](LICENSE) — © 2026 ToshGate
