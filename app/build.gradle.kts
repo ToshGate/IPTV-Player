@@ -1,7 +1,20 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+}
+
+// Release signing comes from keystore.properties at the project root — never committed (see
+// .gitignore) — so the actual keystore path/passwords never end up in the public repository.
+// See keystore.properties.example for the expected format. If this file is missing (e.g. anyone
+// else cloning the repo), the release build type simply builds unsigned instead of failing.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val hasKeystoreProperties = keystorePropertiesFile.exists()
+val keystoreProperties = Properties().apply {
+    if (hasKeystoreProperties) load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -16,10 +29,24 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        if (hasKeystoreProperties) {
+            create("release") {
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (hasKeystoreProperties) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

@@ -78,6 +78,7 @@ class AddSourceDialogFragment : DialogFragment() {
         // Make the dialog window fill the whole screen instead of the platform's default
         // "wrap narrow" floating dialog sizing.
         dialog?.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        @Suppress("DEPRECATION")
         dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     }
 

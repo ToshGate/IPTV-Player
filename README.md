@@ -8,6 +8,17 @@ App Android nativa (Kotlin) para reprodução de listas IPTV (M3U/M3U8, incluind
 com guia de programação (EPG/XMLTV), favoritos, e um leitor de vídeo com gestos, Picture-in-Picture
 e Ecrã inteiro.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/ecra_inicial.jpg" width="220" alt="Ecrã inicial vazio"><br><sub>Ecrã inicial</sub></td>
+    <td align="center"><img src="screenshots/lista_canais.jpg" width="220" alt="Lista de canais com pesquisa"><br><sub>Pesquisa de canais</sub></td>
+    <td align="center"><img src="screenshots/favoritos.jpg" width="220" alt="Ecrã de favoritos"><br><sub>Favoritos</sub></td>
+    <td align="center"><img src="screenshots/reprodutor_epg.jpg" width="220" alt="Reprodutor com guia de programação"><br><sub>Reprodutor + EPG</sub></td>
+  </tr>
+</table>
+
 ## Funcionalidades
 
 - **Fontes IPTV**: adiciona por URL, ficheiro `.m3u`/`.m3u8` local, ou preenchendo apenas
@@ -41,6 +52,13 @@ e Ecrã inteiro.
 Não há nenhuma chave de API, credencial ou configuração de assinatura no repositório — a app não
 depende de nenhum serviço de terceiros além dos servidores IPTV que o próprio utilizador configurar
 dentro da app.
+
+### Build de release (assinada)
+
+Para gerar uma build de release assinada, copia `keystore.properties.example` para
+`keystore.properties` (na raiz do projeto) e preenche com os dados da tua keystore. Esse ficheiro
+nunca é submetido ao repositório (está no `.gitignore`). Sem ele, a build `release` continua a
+compilar normalmente, apenas sem assinatura.
 
 ## Notas
 
