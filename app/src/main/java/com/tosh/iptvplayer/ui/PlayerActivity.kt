@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.util.Rational
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.ViewCompat
@@ -16,6 +17,7 @@ import androidx.core.view.updatePadding
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.recyclerview.widget.LinearLayoutManager
+import kotlinx.coroutines.launch
 import com.tosh.iptvplayer.IptvApplication
 import com.tosh.iptvplayer.R
 import com.tosh.iptvplayer.databinding.ActivityPlayerBinding
@@ -32,6 +34,7 @@ class PlayerActivity : AppCompatActivity() {
     private var qualityUrls: List<String> = emptyList()
     private var qualityIds: List<String> = emptyList()
     private var selectedQualityIndex = 0
+    private var currentProgrammes: List<com.tosh.iptvplayer.model.EpgProgramme> = emptyList()
 
     private val updateProgressAction = object : Runnable {
         override fun run() {
@@ -288,10 +291,10 @@ class PlayerActivity : AppCompatActivity() {
         val gestureController = PlayerGestureController(this, audioManager)
 
         gestureController.onBrightnessChanged = { percent ->
-            showIndicator("Brilho", percent)
+            showIndicator(R.drawable.ic_gesture_brightness, percent)
         }
         gestureController.onVolumeChanged = { percent ->
-            showIndicator("Volume", percent)
+            showIndicator(R.drawable.ic_gesture_volume, percent)
         }
         gestureController.onGestureEnd = {
             binding.gestureIndicator.postDelayed({
@@ -301,15 +304,29 @@ class PlayerActivity : AppCompatActivity() {
         gestureController.attachTo(binding.playerView)
     }
 
-    private fun showIndicator(label: String, percent: Int) {
+    private fun showIndicator(iconRes: Int, percent: Int) {
         binding.gestureIndicator.visibility = android.view.View.VISIBLE
-        binding.gestureIndicatorLabel.text = label
+        binding.gestureIndicatorIcon.setImageResource(iconRes)
         binding.gestureIndicatorValue.text = "$percent%"
         binding.gestureIndicatorBar.progress = percent
     }
 
     private fun setupEpgPanel(tvgId: String?) {
-        val programmes = repository.programmesFor(tvgId)
+        // Make sure the disk-persisted EPG has actually been loaded into memory before reading
+        // it — restoreEpgCacheFromDisk() normally runs from MainActivity on app open, but that's
+        // a separate, independently-timed coroutine; if a channel is opened quickly enough, it
+        // can still be in flight, and programmesFor() would silently read an empty cache. This
+        // guarantees it's ready first (the call is cheap/idempotent if already loaded).
+        lifecycleScope.launch {
+            repository.restoreEpgCacheFromDisk()
+            renderEpgPanel(repository.programmesFor(tvgId))
+        }
+    }
+
+    private fun renderEpgPanel(programmes: List<com.tosh.iptvplayer.model.EpgProgramme>) {
+        currentProgrammes = programmes
+        updateFullscreenProgramLabel(resources.configuration.orientation)
+
         if (programmes.isEmpty()) {
             binding.epgEmptyLabel.visibility = android.view.View.VISIBLE
             binding.epgList.visibility = android.view.View.GONE
@@ -328,6 +345,23 @@ class PlayerActivity : AppCompatActivity() {
                     layoutManager.scrollToPositionWithOffset(currentIndex, 0)
                 }
             }
+        }
+    }
+
+    /** Current programme name shown over the video — only in fullscreen/landscape, where the
+     * header (which normally shows the channel name) is hidden. Re-evaluated both when fresh EPG
+     * data arrives and whenever the orientation changes, so rotating mid-viewing updates it too. */
+    private fun updateFullscreenProgramLabel(orientation: Int) {
+        val now = System.currentTimeMillis()
+        val current = currentProgrammes.firstOrNull { now in it.startMillis until it.stopMillis }
+        val isLandscape = orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (current == null || !isLandscape) {
+            binding.fullscreenProgramLabel.visibility = android.view.View.GONE
+        } else {
+            binding.fullscreenProgramLabel.text = current.title
+            binding.fullscreenProgramLabel.visibility = android.view.View.VISIBLE
+            // Marquee only actually animates once the TextView is marked "selected".
+            binding.fullscreenProgramLabel.isSelected = true
         }
     }
 
@@ -439,6 +473,7 @@ class PlayerActivity : AppCompatActivity() {
             // Show system bars in portrait
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
+        updateFullscreenProgramLabel(orientation)
         binding.root.requestLayout()
     }
 

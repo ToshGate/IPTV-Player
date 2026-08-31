@@ -26,6 +26,9 @@ class EpgAdapter(private val items: List<EpgProgramme>) : RecyclerView.Adapter<E
         val isNow = now in programme.startMillis until programme.stopMillis
         val b = holder.binding
         b.programTitle.text = programme.title
+        // Marquee only actually animates once the TextView is marked "selected" — needed per
+        // item here since RecyclerView reuses/rebinds views, unlike a one-off screen label.
+        b.programTitle.isSelected = true
         b.programTime.text = timeFormat.format(Date(programme.startMillis))
         b.programEndTime.text = timeFormat.format(Date(programme.stopMillis))
         b.nowLabel.visibility = if (isNow) android.view.View.VISIBLE else android.view.View.GONE
