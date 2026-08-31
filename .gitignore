@@ -1,0 +1,31 @@
+# Local configuration (contains machine-specific SDK path, e.g. Users\<name>\... on Windows —
+# NEVER commit this, Android Studio regenerates it automatically for anyone who opens the project)
+local.properties
+
+# Gradle
+.gradle/
+build/
+app/build/
+*/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.kotlin/
+captures/
+.cxx/
+
+# Signing (if you ever add a real release keystore, keep it out of the repo)
+*.jks
+*.keystore
+keystore.properties
+
+# Room-generated schema exports (only relevant if exportSchema is ever set to true)
+schemas/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log/output files
+*.log
