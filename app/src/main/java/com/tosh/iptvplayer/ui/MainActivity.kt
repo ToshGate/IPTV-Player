@@ -116,6 +116,22 @@ class MainActivity : AppCompatActivity() {
                 adapter.notifyDataSetChanged()
             }
         }
+
+        // Silent update check: only ever surfaces a dialog if a newer release genuinely exists —
+        // no dialog, no toast, nothing at all if the check fails (no network) or is up to date.
+        // Guarded to once per app process, since MainActivity can be recreated multiple times in
+        // a session (e.g. navigating back from Favoritos) — without this it could re-prompt every time.
+        if (!hasCheckedForUpdateThisSession) {
+            hasCheckedForUpdateThisSession = true
+            lifecycleScope.launch {
+                runCatching {
+                    val updateChecker = com.tosh.iptvplayer.data.UpdateChecker(this@MainActivity)
+                    updateChecker.checkForUpdate()?.let { update ->
+                        showUpdateDialog(updateChecker, update)
+                    }
+                }
+            }
+        }
     }
 
     private fun applyFilter(query: String) {
@@ -202,6 +218,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SKIP_DEFAULT_SCREEN_REDIRECT = "extra_skip_default_screen_redirect"
+        private var hasCheckedForUpdateThisSession = false
     }
 }
 

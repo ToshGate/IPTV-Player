@@ -64,6 +64,25 @@ class SettingsActivity : AppCompatActivity(), AddSourceDialogFragment.Listener {
         binding.btnBufferMode.setOnClickListener {
             showBufferModeDialog()
         }
+
+        binding.appVersionSubtitle.text = "Versão ${com.tosh.iptvplayer.BuildConfig.VERSION_NAME}"
+        binding.btnCheckUpdate.setOnClickListener {
+            checkForUpdateManually()
+        }
+    }
+
+    private fun checkForUpdateManually() {
+        binding.appVersionSubtitle.text = "A verificar…"
+        lifecycleScope.launch {
+            val updateChecker = com.tosh.iptvplayer.data.UpdateChecker(this@SettingsActivity)
+            val update = runCatching { updateChecker.checkForUpdate() }.getOrNull()
+            binding.appVersionSubtitle.text = "Versão ${com.tosh.iptvplayer.BuildConfig.VERSION_NAME}"
+            if (update != null) {
+                showUpdateDialog(updateChecker, update)
+            } else {
+                Toast.makeText(this@SettingsActivity, "Já tens a versão mais recente", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun updateDefaultScreenSubtitle() {
