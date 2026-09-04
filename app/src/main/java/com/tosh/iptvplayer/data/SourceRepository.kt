@@ -101,6 +101,12 @@ class SourceRepository(private val context: Context) {
         prefs.edit().putString(PREF_THEME_MODE, mode.name).apply()
     }
 
+    fun isPipEnabled(): Boolean = prefs.getBoolean(PREF_PIP_ENABLED, true)
+
+    fun setPipEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_PIP_ENABLED, enabled).apply()
+    }
+
     fun getBufferMode(): BufferMode =
         BufferMode.fromName(prefs.getString(PREF_BUFFER_MODE, null))
 
@@ -287,12 +293,34 @@ class SourceRepository(private val context: Context) {
         return result
     }
 
+    /** Re-fetches every source's playlist and replaces its channels with whatever's there now —
+     * additions, removals and renames on the provider's side all show up after this, unlike
+     * before where channels were only ever fetched once, when the source was first added.
+     * Per-source failures (one bad/unreachable source) don't stop the others from updating. */
+    suspend fun refreshAllChannels(): Boolean = withContext(Dispatchers.IO) {
+        var anySucceeded = false
+        for (source in db.sourceDao().getAll()) {
+            runCatching {
+                openStream(source.playlistLocation, source.playlistIsFile).use { stream ->
+                    val result = M3uParser.parse(stream, source.id)
+                    db.channelDao().replaceForSource(source.id, result.channels.map { it.toEntity() })
+                }
+            }.onSuccess { anySucceeded = true }
+        }
+        anySucceeded
+    }
+
     suspend fun refreshAllEpg(force: Boolean = false) = withContext(Dispatchers.IO) {
         // Always make sure whatever was last fetched is available immediately (fast, local),
         // regardless of whether a fresh network sync is due right now.
         restoreEpgCacheFromDisk()
 
         if (!force && !isEpgSyncDue()) return@withContext
+
+        // Channels follow the same schedule as EPG — additions/removals/renames on the
+        // provider's side show up whenever a scheduled (or manually forced) sync actually runs,
+        // not just when the user explicitly pulls to refresh.
+        runCatching { refreshAllChannels() }
 
         db.sourceDao().getAll().forEach { source ->
             val epgLoc = source.epgLocation
@@ -367,5 +395,6 @@ class SourceRepository(private val context: Context) {
         private const val PREF_BUFFER_MODE = "buffer_mode"
         private const val PREF_CUSTOM_BUFFER_SECONDS = "custom_buffer_seconds"
         private const val PREF_THEME_MODE = "theme_mode"
+        private const val PREF_PIP_ENABLED = "pip_enabled"
     }
 }

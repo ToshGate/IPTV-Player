@@ -26,6 +26,10 @@ class MainActivity : AppCompatActivity() {
     private var allChannels: List<Channel> = emptyList()
     private var groupedChannels: Map<String, List<Channel>> = emptyMap()
     private var favoriteNames: Set<String> = emptySet()
+    // Maps each channel's base name to its stable position in the full, unfiltered list — this
+    // is what the LED number chip shows, so it stays fixed regardless of what a search narrows
+    // the visible list down to.
+    private var baseNameToNumber: Map<String, Int> = emptyMap()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +67,9 @@ class MainActivity : AppCompatActivity() {
             favoriteNamesProvider = { favoriteNames },
             onToggleFavorite = { baseName ->
                 lifecycleScope.launch { repository.toggleFavorite(baseName) }
+            },
+            channelNumberProvider = { channel ->
+                baseNameToNumber[ChannelGrouping.baseName(channel.name)] ?: 0
             }
         )
         binding.channelList.layoutManager = LinearLayoutManager(this)
@@ -74,7 +81,11 @@ class MainActivity : AppCompatActivity() {
 
         binding.swipeRefresh.setOnRefreshListener {
             lifecycleScope.launch {
-                // Deliberately NOT force = true: pull-to-refresh should still respect the EPG
+                // Re-fetch each source's playlist so channel additions/removals/renames on the
+                // provider's side actually show up — previously channels were only ever fetched
+                // once, when the source was first added.
+                runCatching { repository.refreshAllChannels() }
+                // Deliberately NOT force = true for EPG: pull-to-refresh should still respect the
                 // sync interval chosen in Definições. Forcing a sync from every app screen would
                 // bypass the whole point of that setting. A manual, always-force sync is
                 // available from Definições instead.
@@ -89,6 +100,7 @@ class MainActivity : AppCompatActivity() {
             repository.observeChannels().collect { channels ->
                 allChannels = channels
                 groupedChannels = channels.groupBy { ChannelGrouping.baseName(it.name) }
+                baseNameToNumber = groupedChannels.keys.withIndex().associate { (i, baseName) -> baseName to i + 1 }
                 applyFilter(binding.searchInput.text?.toString().orEmpty())
                 binding.emptyState.visibility =
                     if (channels.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE

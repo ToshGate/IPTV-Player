@@ -93,6 +93,14 @@ interface ChannelDao {
 
     @Query("DELETE FROM channels WHERE sourceId = :sourceId")
     suspend fun deleteForSource(sourceId: Long)
+
+    /** Atomically swaps a single source's channels — used when re-syncing a playlist, so a
+     * failure partway through can't leave that source with only some of its channels. */
+    @Transaction
+    suspend fun replaceForSource(sourceId: Long, channels: List<ChannelEntity>) {
+        deleteForSource(sourceId)
+        insertAll(channels)
+    }
 }
 
 @Dao

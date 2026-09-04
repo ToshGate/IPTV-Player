@@ -24,6 +24,10 @@ class PlayerGestureController(
     var onVolumeChanged: ((percent: Int) -> Unit)? = null
     var onGestureEnd: (() -> Unit)? = null
 
+    /** When false, all touches pass straight through untouched (no brightness/volume gesture
+     * handling) — used to disable gestures while the screen is locked. */
+    var enabled = true
+
     private var startY = 0f
     private var startBrightness = 0f
     private var startVolumeFraction = 0f
@@ -34,7 +38,7 @@ class PlayerGestureController(
 
     fun attachTo(view: View) {
         view.setOnTouchListener { v, event ->
-            handleTouch(v, event)
+            if (!enabled) false else handleTouch(v, event)
         }
     }
 

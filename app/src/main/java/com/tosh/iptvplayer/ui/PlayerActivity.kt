@@ -35,6 +35,8 @@ class PlayerActivity : AppCompatActivity() {
     private var qualityIds: List<String> = emptyList()
     private var selectedQualityIndex = 0
     private var currentProgrammes: List<com.tosh.iptvplayer.model.EpgProgramme> = emptyList()
+    private var isScreenLocked = false
+    private lateinit var gestureController: PlayerGestureController
 
     private val updateProgressAction = object : Runnable {
         override fun run() {
@@ -44,6 +46,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private val hideControlsAction = Runnable { hideControls() }
+    private val hideUnlockAction = Runnable { hideUnlockButton() }
 
     private var hideIndicatorRunnable: Runnable? = null
     private var isActivityResumed = false
@@ -87,6 +90,17 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
+        // Registered here (not onStart/onStop) deliberately: in PiP the window can briefly go
+        // through its own visibility/onStop cycle for unrelated reasons moments before the
+        // screen actually turns off, which was unregistering this too early and missing the real
+        // screen-off broadcast entirely. Living for the whole Activity lifetime avoids that race.
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            screenOffReceiver,
+            android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_OFF),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
         loadChannel(intent)
         setupGestures()
         updateLayoutForOrientation(resources.configuration.orientation, false)
@@ -99,7 +113,7 @@ class PlayerActivity : AppCompatActivity() {
 
         binding.btnQuality.setOnClickListener {
             showControls()
-            showQualityDialog()
+            showSettingsPopup(it)
         }
 
         binding.btnFullscreen.setOnClickListener {
@@ -114,6 +128,10 @@ class PlayerActivity : AppCompatActivity() {
             } else {
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
+        }
+
+        binding.btnExitFullscreen.setOnClickListener {
+            requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
 
         binding.btnPlayPause.setOnClickListener {
@@ -144,6 +162,14 @@ class PlayerActivity : AppCompatActivity() {
         })
 
         binding.playerView.setOnClickListener {
+            if (isScreenLocked) {
+                if (binding.btnUnlock.visibility == android.view.View.VISIBLE) {
+                    hideUnlockButton()
+                } else {
+                    showUnlockButton()
+                }
+                return@setOnClickListener
+            }
             if (binding.controlsOverlay.visibility == android.view.View.VISIBLE) {
                 hideControls()
             } else {
@@ -151,8 +177,45 @@ class PlayerActivity : AppCompatActivity() {
             }
         }
 
+        binding.btnLock.setOnClickListener { lockScreen() }
+        binding.btnUnlock.setOnClickListener { unlockScreen() }
+
         // Show controls initially
         showControls()
+    }
+
+    private fun lockScreen() {
+        isScreenLocked = true
+        gestureController.enabled = false
+        binding.root.removeCallbacks(hideControlsAction)
+        binding.controlsOverlay.visibility = android.view.View.GONE
+        showUnlockButton()
+    }
+
+    private fun unlockScreen() {
+        isScreenLocked = false
+        gestureController.enabled = true
+        binding.root.removeCallbacks(hideUnlockAction)
+        binding.btnUnlock.visibility = android.view.View.GONE
+        showControls()
+    }
+
+    private fun showUnlockButton() {
+        binding.root.removeCallbacks(hideUnlockAction)
+        binding.btnUnlock.animate()
+            .alpha(1f)
+            .setDuration(300)
+            .withStartAction { binding.btnUnlock.visibility = android.view.View.VISIBLE }
+            .start()
+        binding.root.postDelayed(hideUnlockAction, 5000)
+    }
+
+    private fun hideUnlockButton() {
+        binding.btnUnlock.animate()
+            .alpha(0f)
+            .setDuration(500)
+            .withEndAction { binding.btnUnlock.visibility = android.view.View.GONE }
+            .start()
     }
 
     private fun showControls() {
@@ -166,6 +229,8 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun hideControls() {
+        dismissSettingsPopup()
+        dismissQualityPopup()
         binding.controlsOverlay.animate()
             .alpha(0f)
             .setDuration(500)
@@ -202,8 +267,10 @@ class PlayerActivity : AppCompatActivity() {
 
         currentStreamUrl = streamUrl
         binding.channelNameLabel.text = channelName
-        binding.btnQuality.visibility =
-            if (qualityNames.size > 1) android.view.View.VISIBLE else android.view.View.GONE
+        // Always visible now — it opens a settings menu (quality + PiP toggle), not just the
+        // quality picker, so it's relevant even for a single-quality channel.
+        binding.btnQuality.visibility = android.view.View.VISIBLE
+        updatePipButtonVisibility()
 
         if (!isSameStream) {
             player?.release()
@@ -288,7 +355,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun setupGestures() {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val gestureController = PlayerGestureController(this, audioManager)
+        gestureController = PlayerGestureController(this, audioManager)
 
         gestureController.onBrightnessChanged = { percent ->
             showIndicator(R.drawable.ic_gesture_brightness, percent)
@@ -382,8 +449,9 @@ class PlayerActivity : AppCompatActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Auto-enter floating (PiP) mode when the user leaves the app while a channel is playing,
-        // enabling multitasking instead of stopping playback.
-        if (player?.isPlaying == true) {
+        // enabling multitasking instead of stopping playback — unless the user has disabled PiP
+        // entirely in the player's settings menu.
+        if (player?.isPlaying == true && repository.isPipEnabled()) {
             enterPip()
         }
     }
@@ -444,6 +512,8 @@ class PlayerActivity : AppCompatActivity() {
         if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
             binding.headerBar.visibility = android.view.View.GONE
             binding.epgContainer.visibility = android.view.View.GONE
+            binding.btnLock.visibility = android.view.View.VISIBLE
+            binding.btnExitFullscreen.visibility = android.view.View.VISIBLE
             // Same issue as the PiP case: resizing only the video (not its wrap_content parent
             // container) leaves the measurement ambiguous, so the video can end up off-center
             // or pinned to one edge depending on the device/screen size. Expand both.
@@ -460,6 +530,12 @@ class PlayerActivity : AppCompatActivity() {
         } else {
             binding.headerBar.visibility = android.view.View.VISIBLE
             binding.epgContainer.visibility = android.view.View.VISIBLE
+            binding.btnLock.visibility = android.view.View.GONE
+            binding.btnExitFullscreen.visibility = android.view.View.GONE
+            // The lock is a fullscreen-only affordance — if we somehow leave landscape while
+            // locked (e.g. an external rotation), unlock rather than leaving the user stuck with
+            // no visible way to interact with a smaller, less lock-prone portrait view.
+            if (isScreenLocked) unlockScreen()
             // Reset back to the fixed portrait video height — otherwise, once landscape has set
             // this to MATCH_PARENT, returning to portrait would leave it stuck expanded,
             // covering the EPG list below.
@@ -475,6 +551,19 @@ class PlayerActivity : AppCompatActivity() {
         }
         updateFullscreenProgramLabel(orientation)
         binding.root.requestLayout()
+    }
+
+    /** Locking the screen (power button) doesn't call onStop()/onPause() on its own — Android
+     * still considers a foreground activity "resumed" with the screen off, so without this,
+     * playback (and its data usage) would silently keep running behind a black screen even
+     * without PiP. Explicitly listening for the system's screen-off broadcast is the only
+     * reliable way to catch this. */
+    private val screenOffReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            if (intent?.action == android.content.Intent.ACTION_SCREEN_OFF) {
+                player?.pause()
+            }
+        }
     }
 
     override fun onStop() {
@@ -566,25 +655,175 @@ class PlayerActivity : AppCompatActivity() {
             .build()
     }
 
-    private fun showQualityDialog() {
-        val names = qualityNames.toTypedArray()
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this, R.style.CustomDarkDialog)
-            .setTitle("Selecionar Qualidade")
-            .setSingleChoiceItems(names, selectedQualityIndex) { dialog, which ->
-                selectedQualityIndex = which
-                currentStreamUrl = qualityUrls[which]
-                reloadStream()
-                
-                // Refresh EPG if the new quality has a different ID
-                val newTvgId = qualityIds.getOrNull(which)
-                if (!newTvgId.isNullOrBlank()) {
-                    setupEpgPanel(newTvgId)
-                }
-                
-                dialog.dismiss()
+    /** Shows/hides the PiP header button according to the saved preference — called whenever a
+     * channel loads, and whenever the preference itself changes in the settings popup. */
+    private fun updatePipButtonVisibility() {
+        binding.btnPip.visibility =
+            if (repository.isPipEnabled()) android.view.View.VISIBLE else android.view.View.GONE
+    }
+
+    private var settingsPopupWindow: android.widget.PopupWindow? = null
+    private var settingsPopupRoot: android.view.View? = null
+    private var qualityPopupWindow: android.widget.PopupWindow? = null
+    private var qualityPopupRoot: android.view.View? = null
+
+    /** Fades and closes the settings popup if one is open — the single path every dismissal
+     * (outside tap, picking a row, or the shared control-hiding timer below) goes through, so
+     * it always fades the same way and the tracked reference always gets cleared. */
+    private fun dismissSettingsPopup() {
+        val popup = settingsPopupWindow ?: return
+        val root = settingsPopupRoot
+        settingsPopupWindow = null
+        settingsPopupRoot = null
+        if (root != null) {
+            root.animate().alpha(0f).setDuration(200).withEndAction { popup.dismiss() }.start()
+        } else {
+            popup.dismiss()
+        }
+    }
+
+    private fun showSettingsPopup(anchor: android.view.View) {
+        // Passing a parent here (attachToRoot=false — it's NOT actually added as a child of it)
+        // is required for the inflated root to get real LayoutParams reflecting the XML's
+        // android:layout_width at all; inflate(layoutInflater) alone leaves it null until a view
+        // is actually attached somewhere, which crashed the width lookup below.
+        val popupBinding = com.tosh.iptvplayer.databinding.PopupPlayerSettingsBinding.inflate(
+            layoutInflater, binding.root, false
+        )
+        popupBinding.root.alpha = 0f
+
+        val popupWindow = android.widget.PopupWindow(
+            popupBinding.root,
+            // Explicit width, not WRAP_CONTENT: a PopupWindow's own width parameter overrides
+            // whatever android:layout_width is set on the root of the XML content — WRAP_CONTENT
+            // here would size it off the inner text/padding instead, ignoring that value entirely.
+            popupBinding.root.layoutParams?.width ?: ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        )
+        popupWindow.isOutsideTouchable = true
+        popupWindow.elevation = 12f
+        settingsPopupWindow = popupWindow
+        settingsPopupRoot = popupBinding.root
+
+        // Routes the outside tap through our own fade-dismiss instead of the default abrupt one,
+        // so closing it this way looks consistent with every other dismissal path.
+        popupWindow.setTouchInterceptor { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                dismissSettingsPopup()
+                true
+            } else {
+                false
             }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        }
+
+        popupBinding.menuQualityRow.visibility =
+            if (qualityNames.size > 1) android.view.View.VISIBLE else android.view.View.GONE
+        popupBinding.menuDivider.visibility = popupBinding.menuQualityRow.visibility
+        popupBinding.menuQualityRow.setOnClickListener {
+            dismissSettingsPopup()
+            showQualityDialog()
+        }
+
+        popupBinding.switchPip.isChecked = repository.isPipEnabled()
+        popupBinding.switchPip.setOnCheckedChangeListener { _, isChecked ->
+            repository.setPipEnabled(isChecked)
+            updatePipButtonVisibility()
+        }
+        popupBinding.menuPipRow.setOnClickListener { popupBinding.switchPip.toggle() }
+
+        // Simple orientation rule, no measuring: portrait has room below the button (that's
+        // where the EPG panel sits, already the desired behaviour), fullscreen doesn't (the
+        // button sits right at the bottom screen edge there) so it opens upward instead.
+        val yOffset = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            -(anchor.height + (120 * resources.displayMetrics.density).toInt())
+        } else {
+            8
+        }
+
+        popupWindow.showAsDropDown(anchor, 0, yOffset, android.view.Gravity.END)
+        popupBinding.root.animate().alpha(1f).setDuration(200).start()
+    }
+
+    private fun dismissQualityPopup() {
+        val popup = qualityPopupWindow ?: return
+        val root = qualityPopupRoot
+        qualityPopupWindow = null
+        qualityPopupRoot = null
+        if (root != null) {
+            root.animate().alpha(0f).setDuration(200).withEndAction { popup.dismiss() }.start()
+        } else {
+            popup.dismiss()
+        }
+    }
+
+    /** Compact floating list of quality options, styled to match the settings popup (dark,
+     * same rows/opacity) instead of the much taller default AlertDialog list. */
+    private fun showQualityDialog() {
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            background = androidx.core.content.ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_popup_dark)
+            setPadding(0, (4 * resources.displayMetrics.density).toInt(), 0, (4 * resources.displayMetrics.density).toInt())
+            layoutParams = ViewGroup.LayoutParams((220 * resources.displayMetrics.density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        container.alpha = 0f
+
+        val popupWindow = android.widget.PopupWindow(
+            container,
+            (220 * resources.displayMetrics.density).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        )
+        popupWindow.isOutsideTouchable = true
+        popupWindow.elevation = 12f
+        qualityPopupWindow = popupWindow
+        qualityPopupRoot = container
+
+        popupWindow.setTouchInterceptor { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
+                dismissQualityPopup()
+                true
+            } else {
+                false
+            }
+        }
+
+        qualityNames.forEachIndexed { index, name ->
+            val row = android.widget.TextView(this).apply {
+                text = name
+                textSize = 14f
+                setTextColor(if (index == selectedQualityIndex) getColor(R.color.accent) else android.graphics.Color.WHITE)
+                setPadding(
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (12 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (12 * resources.displayMetrics.density).toInt()
+                )
+                isClickable = true
+                isFocusable = true
+                background = androidx.core.content.ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_popup_row_ripple)
+                setOnClickListener {
+                    dismissQualityPopup()
+                    selectedQualityIndex = index
+                    currentStreamUrl = qualityUrls[index]
+                    reloadStream()
+                    val newTvgId = qualityIds.getOrNull(index)
+                    if (!newTvgId.isNullOrBlank()) {
+                        setupEpgPanel(newTvgId)
+                    }
+                }
+            }
+            container.addView(row)
+        }
+
+        val yOffset = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            -(binding.btnQuality.height + (60 * qualityNames.size * resources.displayMetrics.density).toInt())
+        } else {
+            8
+        }
+
+        popupWindow.showAsDropDown(binding.btnQuality, 0, yOffset, android.view.Gravity.END)
+        container.animate().alpha(1f).setDuration(200).start()
     }
 
     private fun formatTime(millis: Long): String {
@@ -596,6 +835,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        runCatching { unregisterReceiver(screenOffReceiver) }
         player?.release()
         player = null
     }

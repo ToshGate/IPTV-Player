@@ -114,144 +114,212 @@
                 android:layout_gravity="bottom"
                 android:background="@drawable/scrim_bottom" />
 
-            <!-- Current programme name, shown only in fullscreen/landscape (the header with the
-                 channel name is hidden there) — discreet, top-left, marquee for long titles so
-                 it never grows to fill the top of the screen. -->
-            <TextView
-                android:id="@+id/fullscreenProgramLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:layout_marginStart="16dp"
-                android:layout_marginTop="14dp"
-                android:background="@drawable/bg_control_pill_small"
-                android:ellipsize="marquee"
-                android:focusable="true"
-                android:focusableInTouchMode="true"
-                android:marqueeRepeatLimit="marquee_forever"
-                android:maxWidth="220dp"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="5dp"
-                android:singleLine="true"
-                android:textColor="#FFFFFF"
-                android:textSize="12.5sp"
-                android:visibility="gone"
-                tools:text="Telejornal"
-                tools:visibility="visible" />
-
-            <ImageButton
-                android:id="@+id/btnPlayPause"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:layout_gravity="center"
-                android:background="@drawable/bg_control_circle"
-                android:src="@drawable/ic_pause"
-                app:tint="#FFFFFF"
-                tools:ignore="ContentDescription" />
-
-            <LinearLayout
+            <!-- Everything here is hidden together when the screen is locked, leaving only
+                 btnUnlock (below, outside this group) interactive. -->
+            <FrameLayout
+                android:id="@+id/normalControlsGroup"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom"
-                android:orientation="vertical"
-                android:paddingHorizontal="10dp"
-                android:paddingBottom="10dp">
+                android:layout_height="match_parent">
 
-                <SeekBar
-                    android:id="@+id/videoSeekBar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="2dp"
-                    android:max="100"
-                    android:progressTint="@color/accent"
-                    android:thumbTint="@color/accent" />
-
+                <!-- Current programme name + a button to exit fullscreen, shown only in
+                     fullscreen/landscape (the header with the channel name and back button is
+                     hidden there) — discreet, top-left, marquee for long titles so the label
+                     never grows to fill the top of the screen. Grouped in one row so the two
+                     stay correctly aligned side by side without hand-tuned margins. -->
                 <LinearLayout
-                    android:layout_width="match_parent"
+                    android:id="@+id/fullscreenTopLeftGroup"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_gravity="top|start"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginTop="14dp"
                     android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="6dp">
-
-                    <TextView
-                        android:id="@+id/currentTime"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:text="00:00"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp" />
-
-                    <View
-                        android:layout_width="0dp"
-                        android:layout_height="0dp"
-                        android:layout_weight="1" />
-
-                    <TextView
-                        android:id="@+id/totalTime"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:fontFamily="monospace"
-                        android:text="00:00"
-                        android:textColor="#FFFFFF"
-                        android:textSize="11sp"
-                        android:visibility="gone" />
-
-                    <LinearLayout
-                        android:id="@+id/btnLive"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_control_pill_small"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:paddingHorizontal="9dp"
-                        android:paddingVertical="5dp">
-
-                        <View
-                            android:layout_width="14dp"
-                            android:layout_height="14dp"
-                            android:layout_marginEnd="5dp"
-                            android:background="@drawable/ic_live_dot" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Vivo"
-                            android:textColor="#FFFFFF"
-                            android:textSize="11.5sp"
-                            android:textStyle="bold" />
-                    </LinearLayout>
+                    android:orientation="horizontal">
 
                     <ImageButton
-                        android:id="@+id/btnQuality"
+                        android:id="@+id/btnExitFullscreen"
                         android:layout_width="34dp"
                         android:layout_height="34dp"
-                        android:layout_marginStart="6dp"
+                        android:layout_marginEnd="8dp"
                         android:background="@drawable/bg_control_circle"
                         android:padding="7dp"
                         android:scaleType="fitCenter"
-                        android:src="@drawable/ic_quality"
+                        android:src="@drawable/ic_back"
                         android:visibility="gone"
                         app:tint="#FFFFFF"
                         tools:ignore="ContentDescription"
                         tools:visibility="visible" />
 
-                    <ImageButton
-                        android:id="@+id/btnFullscreen"
-                        android:layout_width="34dp"
-                        android:layout_height="34dp"
-                        android:layout_marginStart="6dp"
-                        android:background="@drawable/bg_control_circle"
-                        android:padding="7dp"
-                        android:scaleType="fitCenter"
-                        android:src="@drawable/ic_fullscreen"
-                        app:tint="#FFFFFF"
-                        tools:ignore="ContentDescription" />
+                    <TextView
+                        android:id="@+id/fullscreenProgramLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_control_pill_small"
+                        android:ellipsize="marquee"
+                        android:focusable="true"
+                        android:focusableInTouchMode="true"
+                        android:marqueeRepeatLimit="marquee_forever"
+                        android:maxWidth="220dp"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="5dp"
+                        android:singleLine="true"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12.5sp"
+                        android:visibility="gone"
+                        tools:text="Telejornal"
+                        tools:visibility="visible" />
+
                 </LinearLayout>
-            </LinearLayout>
+
+                <!-- Screen lock toggle — only meaningful/shown in fullscreen, mirroring
+                     fullscreenProgramLabel's placement on the opposite corner. -->
+                <ImageButton
+                    android:id="@+id/btnLock"
+                    android:layout_width="34dp"
+                    android:layout_height="34dp"
+                    android:layout_gravity="center_vertical|end"
+                    android:layout_marginEnd="16dp"
+                    android:background="@drawable/bg_control_circle"
+                    android:padding="7dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_lock_open"
+                    android:visibility="gone"
+                    app:tint="#FFFFFF"
+                    tools:ignore="ContentDescription"
+                    tools:visibility="visible" />
+
+                <ImageButton
+                    android:id="@+id/btnPlayPause"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:layout_gravity="center"
+                    android:background="@drawable/bg_control_circle_playpause"
+                    android:src="@drawable/ic_pause"
+                    app:tint="#FFFFFF"
+                    tools:ignore="ContentDescription" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="bottom"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="10dp"
+                    android:paddingBottom="10dp">
+
+                    <SeekBar
+                        android:id="@+id/videoSeekBar"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="2dp"
+                        android:max="100"
+                        android:progressTint="@color/accent"
+                        android:thumbTint="@color/accent" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="6dp">
+
+                        <TextView
+                            android:id="@+id/currentTime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="00:00"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp" />
+
+                        <View
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:layout_weight="1" />
+
+                        <TextView
+                            android:id="@+id/totalTime"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:text="00:00"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp"
+                            android:visibility="gone" />
+
+                        <LinearLayout
+                            android:id="@+id/btnLive"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_control_pill_small"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingHorizontal="9dp"
+                            android:paddingVertical="5dp">
+
+                            <View
+                                android:layout_width="14dp"
+                                android:layout_height="14dp"
+                                android:layout_marginEnd="5dp"
+                                android:background="@drawable/ic_live_dot" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Vivo"
+                                android:textColor="#FFFFFF"
+                                android:textSize="11.5sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <ImageButton
+                            android:id="@+id/btnQuality"
+                            android:layout_width="34dp"
+                            android:layout_height="34dp"
+                            android:layout_marginStart="6dp"
+                            android:background="@drawable/bg_control_circle"
+                            android:padding="7dp"
+                            android:scaleType="fitCenter"
+                            android:src="@drawable/ic_gear"
+                            app:tint="#FFFFFF"
+                            tools:ignore="ContentDescription"
+                            tools:visibility="visible" />
+
+                        <ImageButton
+                            android:id="@+id/btnFullscreen"
+                            android:layout_width="34dp"
+                            android:layout_height="34dp"
+                            android:layout_marginStart="6dp"
+                            android:background="@drawable/bg_control_circle"
+                            android:padding="7dp"
+                            android:scaleType="fitCenter"
+                            android:src="@drawable/ic_fullscreen"
+                            app:tint="#FFFFFF"
+                            tools:ignore="ContentDescription" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </FrameLayout>
         </FrameLayout>
+
+        <!-- Sole interactive element while locked — tapping it unlocks and restores the normal
+             controls. Deliberately a sibling of controlsOverlay (not nested inside it), so it's
+             never affected by showControls()/hideControls() fading the rest in and out. -->
+        <ImageButton
+            android:id="@+id/btnUnlock"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/bg_control_circle"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_lock"
+            android:visibility="gone"
+            app:tint="#FFFFFF"
+            tools:ignore="ContentDescription" />
+
     </FrameLayout>
 
     <LinearLayout

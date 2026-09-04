@@ -24,6 +24,9 @@ class FavoritesActivity : AppCompatActivity() {
     private lateinit var adapter: ChannelAdapter
 
     private var allFavoriteChannels: List<Channel> = emptyList()
+    // Same stable numbering as the main list — computed from the FULL channel list (all
+    // channels, not just favorites), so a channel shows the same number here as it does there.
+    private var baseNameToNumber: Map<String, Int> = emptyMap()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +44,9 @@ class FavoritesActivity : AppCompatActivity() {
             favoriteNamesProvider = { allFavoriteChannels.map { ChannelGrouping.baseName(it.name) }.toSet() },
             onToggleFavorite = { baseName ->
                 lifecycleScope.launch { repository.toggleFavorite(baseName) }
+            },
+            channelNumberProvider = { channel ->
+                baseNameToNumber[ChannelGrouping.baseName(channel.name)] ?: 0
             }
         )
         binding.channelList.layoutManager = LinearLayoutManager(this)
@@ -50,6 +56,7 @@ class FavoritesActivity : AppCompatActivity() {
 
         binding.swipeRefresh.setOnRefreshListener {
             lifecycleScope.launch {
+                runCatching { repository.refreshAllChannels() }
                 runCatching { repository.refreshAllEpg() }
                 binding.swipeRefresh.isRefreshing = false
                 adapter.notifyDataSetChanged()
@@ -62,6 +69,15 @@ class FavoritesActivity : AppCompatActivity() {
                 applyFilter(binding.searchInput.text?.toString().orEmpty())
                 binding.emptyState.visibility =
                     if (channels.isEmpty()) android.view.View.VISIBLE else android.view.View.GONE
+            }
+        }
+
+        lifecycleScope.launch {
+            repository.observeChannels().collect { channels ->
+                baseNameToNumber = channels
+                    .groupBy { ChannelGrouping.baseName(it.name) }
+                    .keys.withIndex().associate { (i, baseName) -> baseName to i + 1 }
+                adapter.notifyDataSetChanged()
             }
         }
     }

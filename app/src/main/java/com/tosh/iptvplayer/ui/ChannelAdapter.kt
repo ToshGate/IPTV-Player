@@ -14,7 +14,11 @@ class ChannelAdapter(
     private val repository: SourceRepository,
     private val onClick: (Channel) -> Unit,
     private val favoriteNamesProvider: () -> Set<String> = { emptySet() },
-    private val onToggleFavorite: ((String) -> Unit)? = null
+    private val onToggleFavorite: ((String) -> Unit)? = null,
+    // Stable channel number (e.g. matching its position in the full, unfiltered list) — NOT the
+    // row's position in whatever list is currently bound, which used to be used directly and
+    // renumbered every channel from 1 whenever a search filtered the list down.
+    private val channelNumberProvider: (Channel) -> Int = { 0 }
 ) : ListAdapter<Channel, ChannelAdapter.VH>(DIFF) {
 
     inner class VH(val binding: ItemChannelBinding) : RecyclerView.ViewHolder(binding.root)
@@ -27,7 +31,7 @@ class ChannelAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val channel = getItem(position)
         val b = holder.binding
-        b.channelNumber.text = (position + 1).toString()
+        b.channelNumber.text = channelNumberProvider(channel).toString()
         b.channelName.text = channel.name
         b.channelGroup.text = channel.groupTitle ?: ""
         b.channelGroup.visibility = if (channel.groupTitle.isNullOrBlank()) android.view.View.GONE else android.view.View.VISIBLE
