@@ -1,5 +1,6 @@
 package com.tosh.iptvplayer.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -68,6 +69,10 @@ class SettingsActivity : AppCompatActivity(), AddSourceDialogFragment.Listener {
         binding.appVersionSubtitle.text = "Versão ${com.tosh.iptvplayer.BuildConfig.VERSION_NAME}"
         binding.btnCheckUpdate.setOnClickListener {
             checkForUpdateManually()
+        }
+
+        binding.btnOpenVpn.setOnClickListener {
+            startActivity(Intent(this, VpnActivity::class.java))
         }
     }
 

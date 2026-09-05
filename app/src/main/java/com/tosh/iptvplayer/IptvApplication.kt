@@ -3,15 +3,19 @@ package com.tosh.iptvplayer
 import android.app.Application
 import androidx.appcompat.app.AppCompatDelegate
 import com.tosh.iptvplayer.data.SourceRepository
+import com.tosh.iptvplayer.data.VpnRepository
 import com.tosh.iptvplayer.model.ThemeMode
 
 class IptvApplication : Application() {
     lateinit var repository: SourceRepository
         private set
+    lateinit var vpnRepository: VpnRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
         repository = SourceRepository(this)
+        vpnRepository = VpnRepository(this)
 
         // Applied before any Activity is created, so the correct theme is already active on the
         // very first frame instead of flashing the default and then switching.

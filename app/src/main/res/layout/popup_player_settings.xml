@@ -7,6 +7,26 @@
     android:paddingVertical="4dp">
 
     <TextView
+        android:id="@+id/menuInfoRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_popup_row_ripple"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp"
+        android:text="Informação"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp" />
+
+    <View
+        android:id="@+id/menuDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginHorizontal="8dp"
+        android:background="#26FFFFFF" />
+
+    <TextView
         android:id="@+id/menuQualityRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -20,7 +40,7 @@
         android:textSize="14sp" />
 
     <View
-        android:id="@+id/menuDivider"
+        android:id="@+id/menuDivider2"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginHorizontal="8dp"

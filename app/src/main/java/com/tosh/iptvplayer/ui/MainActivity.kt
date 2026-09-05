@@ -21,7 +21,46 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private val repository by lazy { (application as IptvApplication).repository }
+    private val vpnRepository by lazy { (application as IptvApplication).vpnRepository }
     private lateinit var adapter: ChannelAdapter
+    private var optionsMenu: Menu? = null
+
+    // The one-time system "trust this app as a VPN" consent dialog can only be triggered from an
+    // Activity.
+    private val vpnPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            performVpnConnect()
+        } else {
+            android.widget.Toast.makeText(this, "Permissão de VPN recusada", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun performVpnConnect() {
+        lifecycleScope.launch {
+            vpnRepository.connect().onSuccess {
+                updateVpnMenuIcon()
+            }.onFailure {
+                android.widget.Toast.makeText(this@MainActivity, "Falha ao ligar VPN: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
+                updateVpnMenuIcon()
+            }
+        }
+    }
+
+    private fun performVpnDisconnect() {
+        lifecycleScope.launch {
+            vpnRepository.disconnect()
+            updateVpnMenuIcon()
+        }
+    }
+
+    private fun updateVpnMenuIcon() {
+        val isUp = vpnRepository.currentState() == com.wireguard.android.backend.Tunnel.State.UP
+        optionsMenu?.findItem(R.id.action_vpn)?.setIcon(
+            if (isUp) R.drawable.ic_vpn_on else R.drawable.ic_vpn_off
+        )
+    }
 
     private var allChannels: List<Channel> = emptyList()
     private var groupedChannels: Map<String, List<Channel>> = emptyMap()
@@ -194,11 +233,31 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
+        optionsMenu = menu
+        updateVpnMenuIcon()
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
+            R.id.action_vpn -> {
+                if (vpnRepository.getSelectedProfileId() == null) {
+                    android.widget.Toast.makeText(
+                        this, "Configura um perfil de VPN primeiro", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    startActivity(Intent(this, VpnActivity::class.java))
+                } else if (vpnRepository.currentState() == com.wireguard.android.backend.Tunnel.State.UP) {
+                    performVpnDisconnect()
+                } else {
+                    val consentIntent = android.net.VpnService.prepare(this)
+                    if (consentIntent != null) {
+                        vpnPermissionLauncher.launch(consentIntent)
+                    } else {
+                        performVpnConnect()
+                    }
+                }
+                return true
+            }
             R.id.action_favorites -> {
                 startActivity(Intent(this, FavoritesActivity::class.java))
                 @Suppress("DEPRECATION")
@@ -219,6 +278,10 @@ class MainActivity : AppCompatActivity() {
         // where this Activity finishes before ever inflating its layout — binding would still
         // be uninitialized if onResume happens to fire in that brief window.
         if (!::binding.isInitialized) return
+
+        // Picks up state changes made elsewhere — e.g. connecting/disconnecting from the
+        // dedicated VPN screen, or picking a different selected profile there.
+        updateVpnMenuIcon()
 
         // Returning to this screen (e.g. via the star toggle) shouldn't leave the search field
         // focused/keyboard open just because it was focused before navigating away — an Activity

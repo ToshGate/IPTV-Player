@@ -666,15 +666,58 @@ class PlayerActivity : AppCompatActivity() {
     private var settingsPopupRoot: android.view.View? = null
     private var qualityPopupWindow: android.widget.PopupWindow? = null
     private var qualityPopupRoot: android.view.View? = null
+    private var infoPopupWindow: android.widget.PopupWindow? = null
 
-    /** Fades and closes the settings popup if one is open — the single path every dismissal
-     * (outside tap, picking a row, or the shared control-hiding timer below) goes through, so
-     * it always fades the same way and the tracked reference always gets cleared. */
+    /** Cancels the controls' auto-hide countdown while a floating menu is open — the person is
+     * mid-interaction with it, so the controls underneath shouldn't disappear on them. */
+    private fun pauseControlsAutoHide() {
+        binding.root.removeCallbacks(hideControlsAction)
+    }
+
+    /** Restarts the auto-hide countdown, unconditionally — used only when there's no other popup
+     * that might still be open (see maybeResumeControlsAutoHide below for why that distinction
+     * matters). */
+    private fun resumeControlsAutoHide() {
+        binding.root.removeCallbacks(hideControlsAction)
+        binding.root.postDelayed(hideControlsAction, 5000)
+    }
+
+    /** The settings popup's own dismiss (row tap → 200ms fade → dismiss()) is asynchronous, so
+     * switching straight to another popup (e.g. tapping "Qualidade") opens the new one and pauses
+     * the countdown *before* the settings popup's fade finishes — its dismiss listener firing
+     * afterwards would otherwise blindly resume the countdown and undo that pause. Checking that
+     * every tracked popup is closed before actually resuming avoids that race. */
+    private fun maybeResumeControlsAutoHide() {
+        if (settingsPopupWindow == null && qualityPopupWindow == null && infoPopupWindow == null) {
+            resumeControlsAutoHide()
+        }
+    }
+
+
+    /** Computes the yOffset needed for showAsDropDown so a popup's BOTTOM edge lands a fixed gap
+     * above the anchor's top — the same target position regardless of the popup's own height, so
+     * differently-sized popups (e.g. "Informação" vs "Qualidade" with a varying number of rows)
+     * still line up with each other in fullscreen instead of opening at different heights.
+     * Portrait keeps the existing simple "open below" behaviour. */
+    private fun fullscreenPopupYOffset(anchor: android.view.View, popupRoot: android.view.View): Int {
+        if (resources.configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) return 8
+        popupRoot.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED)
+        )
+        val popupHeight = popupRoot.measuredHeight
+        val marginAboveAnchor = (20 * resources.displayMetrics.density).toInt()
+        return -(anchor.height + marginAboveAnchor + popupHeight)
+    }
+
     private fun dismissSettingsPopup() {
         val popup = settingsPopupWindow ?: return
         val root = settingsPopupRoot
-        settingsPopupWindow = null
-        settingsPopupRoot = null
+        // Deliberately NOT nulling settingsPopupWindow/settingsPopupRoot or resuming the
+        // auto-hide countdown here — popup.dismiss() (called directly by Android itself for the
+        // back button, bypassing this function entirely) always fires setOnDismissListener
+        // regardless of how the popup closed, so that's the one place that responsibility lives,
+        // to guarantee it happens on every path rather than just this one.
         if (root != null) {
             root.animate().alpha(0f).setDuration(200).withEndAction { popup.dismiss() }.start()
         } else {
@@ -705,6 +748,14 @@ class PlayerActivity : AppCompatActivity() {
         popupWindow.elevation = 12f
         settingsPopupWindow = popupWindow
         settingsPopupRoot = popupBinding.root
+        // Fires no matter how the popup closes — outside tap, a row's own dismiss call, or the
+        // back button/gesture dismissing it directly — so cleanup and resuming the controls'
+        // auto-hide countdown always happen exactly once, regardless of the path taken.
+        popupWindow.setOnDismissListener {
+            settingsPopupWindow = null
+            settingsPopupRoot = null
+            maybeResumeControlsAutoHide()
+        }
 
         // Routes the outside tap through our own fade-dismiss instead of the default abrupt one,
         // so closing it this way looks consistent with every other dismissal path.
@@ -725,6 +776,11 @@ class PlayerActivity : AppCompatActivity() {
             showQualityDialog()
         }
 
+        popupBinding.menuInfoRow.setOnClickListener {
+            dismissSettingsPopup()
+            showStreamInfoPopup()
+        }
+
         popupBinding.switchPip.isChecked = repository.isPipEnabled()
         popupBinding.switchPip.setOnCheckedChangeListener { _, isChecked ->
             repository.setPipEnabled(isChecked)
@@ -743,13 +799,14 @@ class PlayerActivity : AppCompatActivity() {
 
         popupWindow.showAsDropDown(anchor, 0, yOffset, android.view.Gravity.END)
         popupBinding.root.animate().alpha(1f).setDuration(200).start()
+        pauseControlsAutoHide()
     }
 
     private fun dismissQualityPopup() {
         val popup = qualityPopupWindow ?: return
         val root = qualityPopupRoot
-        qualityPopupWindow = null
-        qualityPopupRoot = null
+        // As in dismissSettingsPopup: cleanup and resuming the countdown live in
+        // setOnDismissListener instead of here, so they happen on every close path.
         if (root != null) {
             root.animate().alpha(0f).setDuration(200).withEndAction { popup.dismiss() }.start()
         } else {
@@ -759,6 +816,85 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Compact floating list of quality options, styled to match the settings popup (dark,
      * same rows/opacity) instead of the much taller default AlertDialog list. */
+    /** Stream info popup — deliberately NOT routed through dismissSettingsPopup/dismissQualityPopup
+     * or hideControls(), per the request that this one stays open regardless of the other
+     * controls' auto-hide timer, closing only on an explicit outside tap. */
+    private fun showStreamInfoPopup() {
+        val videoFormat = player?.videoFormat
+        val audioFormat = player?.audioFormat
+
+        val videoLine = if (videoFormat != null && videoFormat.width > 0 && videoFormat.height > 0) {
+            val fpsText = if (videoFormat.frameRate > 0f) {
+                ", ${videoFormat.frameRate.let { if (it == it.toInt().toFloat()) it.toInt().toString() else "%.2f".format(it) }} fps"
+            } else {
+                ""
+            }
+            "Vídeo: ${videoFormat.width} x ${videoFormat.height}$fpsText"
+        } else {
+            "Vídeo: indisponível"
+        }
+
+        val audioLine = if (audioFormat != null && audioFormat.channelCount > 0) {
+            val channelText = when (audioFormat.channelCount) {
+                1 -> "mono"
+                2 -> "estéreo"
+                else -> "${audioFormat.channelCount} canais"
+            }
+            "Áudio: $channelText"
+        } else {
+            "Áudio: indisponível"
+        }
+
+        val container = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            background = androidx.core.content.ContextCompat.getDrawable(this@PlayerActivity, R.drawable.bg_popup_dark)
+            setPadding(
+                (16 * resources.displayMetrics.density).toInt(),
+                (14 * resources.displayMetrics.density).toInt(),
+                (16 * resources.displayMetrics.density).toInt(),
+                (14 * resources.displayMetrics.density).toInt()
+            )
+            layoutParams = ViewGroup.LayoutParams((220 * resources.displayMetrics.density).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(android.widget.TextView(this@PlayerActivity).apply {
+                text = videoLine
+                textSize = 14f
+                setTextColor(android.graphics.Color.WHITE)
+            })
+            addView(android.widget.TextView(this@PlayerActivity).apply {
+                text = audioLine
+                textSize = 14f
+                setTextColor(android.graphics.Color.WHITE)
+                (layoutParams as? android.widget.LinearLayout.LayoutParams)?.topMargin =
+                    (6 * resources.displayMetrics.density).toInt()
+            })
+        }
+
+        val popupWindow = android.widget.PopupWindow(
+            container,
+            (220 * resources.displayMetrics.density).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true
+        )
+        popupWindow.isOutsideTouchable = true
+        popupWindow.elevation = 12f
+
+        // Same orientation rule as the quality/settings popups — fullscreen has this button
+        // right at the bottom edge, so it opens upward there instead of being cut off. Uses the
+        // shared helper (not a fixed guess) so its bottom edge lines up with the Qualidade popup
+        // despite the two having different heights.
+        val yOffset = fullscreenPopupYOffset(binding.btnQuality, container)
+
+        popupWindow.showAsDropDown(binding.btnQuality, 0, yOffset, android.view.Gravity.END)
+        pauseControlsAutoHide()
+        infoPopupWindow = popupWindow
+        // No dedicated dismiss function for this one (it closes only via the default outside-tap
+        // behaviour, by design), so this is the one place to pick the countdown back up.
+        popupWindow.setOnDismissListener {
+            infoPopupWindow = null
+            maybeResumeControlsAutoHide()
+        }
+    }
+
     private fun showQualityDialog() {
         val container = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
@@ -778,6 +914,11 @@ class PlayerActivity : AppCompatActivity() {
         popupWindow.elevation = 12f
         qualityPopupWindow = popupWindow
         qualityPopupRoot = container
+        popupWindow.setOnDismissListener {
+            qualityPopupWindow = null
+            qualityPopupRoot = null
+            maybeResumeControlsAutoHide()
+        }
 
         popupWindow.setTouchInterceptor { _, event ->
             if (event.action == android.view.MotionEvent.ACTION_OUTSIDE) {
@@ -816,14 +957,11 @@ class PlayerActivity : AppCompatActivity() {
             container.addView(row)
         }
 
-        val yOffset = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            -(binding.btnQuality.height + (60 * qualityNames.size * resources.displayMetrics.density).toInt())
-        } else {
-            8
-        }
+        val yOffset = fullscreenPopupYOffset(binding.btnQuality, container)
 
         popupWindow.showAsDropDown(binding.btnQuality, 0, yOffset, android.view.Gravity.END)
         container.animate().alpha(1f).setDuration(200).start()
+        pauseControlsAutoHide()
     }
 
     private fun formatTime(millis: Long): String {

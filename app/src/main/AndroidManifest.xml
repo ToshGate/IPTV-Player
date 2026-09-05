@@ -53,6 +53,22 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.IptvPlayer" />
 
+        <activity
+            android:name=".ui.VpnActivity"
+            android:exported="false"
+            android:theme="@style/Theme.IptvPlayer" />
+
+        <!-- Required by the WireGuard tunnel library (GoBackend) — it manages this VpnService
+             internally to establish the actual system-level VPN tunnel. -->
+        <service
+            android:name="com.wireguard.android.backend.GoBackend$VpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
         <!-- Exposes downloaded update APKs to the system package installer via a content:// URI
              (required since Android 7 — a plain file:// path can't be shared between apps). -->
         <provider

@@ -23,10 +23,10 @@ android {
 
     defaultConfig {
         applicationId = "com.tosh.iptvplayer"
-        minSdk = 23
+        minSdk = 24
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.4.0"
+        versionCode = 6
+        versionName = "1.5.0"
     }
 
     signingConfigs {
@@ -96,6 +96,13 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // WireGuard VPN — embeddable tunnel library, used for importing/connecting with a
+    // manually-exported WireGuard config (e.g. downloaded from a VPN provider's dashboard).
+    implementation("com.wireguard.android:tunnel:1.0.20260102")
+
+    // Encrypted storage for the imported VPN config, since it contains a private key.
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
