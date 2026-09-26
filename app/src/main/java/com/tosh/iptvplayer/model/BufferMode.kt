@@ -1,69 +1,72 @@
 package com.tosh.iptvplayer.model
 
 /**
- * How much of the stream ExoPlayer preloads/keeps buffered ahead during playback. Lower values
- * mean less delay behind live but more risk of stalling on a shaky connection; higher values
- * trade some extra delay for a smoother, more stable playback.
+ * A deliberate delay/safety cushion behind live, in seconds — the same number drives every
+ * mechanism the player has for this (how long it waits before starting, how much it keeps
+ * buffered throughout, and — for streams that expose a live edge (HLS) — how far behind that
+ * edge it targets). Kept as ONE consistent seconds value instead of separately-tuned knobs so it
+ * behaves predictably and, importantly, works for plain/progressive live streams too: many IPTV
+ * providers serve channels as a continuous raw stream with no HLS manifest, so the older
+ * approach (relying mainly on the HLS-only live-offset target) had no visible effect for those —
+ * only bufferForPlaybackMs actually delays a progressive source, since it has no "live edge" for
+ * ExoPlayer to target an offset from at all.
  */
 enum class BufferMode(
     val label: String,
     val description: String,
-    val minBufferMs: Int,
-    val maxBufferMs: Int,
-    val bufferForPlaybackMs: Int,
-    val bufferForPlaybackAfterRebufferMs: Int,
-    // How far behind the actual live edge playback targets. This — not the buffer sizes above —
-    // is what actually determines the visible delay behind live for a live stream; ExoPlayer
-    // decides its live playback position independently of the local resilience buffer.
-    val liveTargetOffsetMs: Long
+    val delaySeconds: Int
 ) {
     LOW(
         "Baixo",
-        "Início em ~1,5 seg, guarda 5–15 seg à frente. Mais próximo do direto, mais sujeito a interrupções em ligações instáveis.",
-        minBufferMs = 5_000,
-        maxBufferMs = 15_000,
-        bufferForPlaybackMs = 1_500,
-        bufferForPlaybackAfterRebufferMs = 3_000,
-        liveTargetOffsetMs = 3_000
+        "Guarda 5 segundos antes de começar. Mais próximo do direto, mais sujeito a interrupções em ligações instáveis.",
+        delaySeconds = 5
     ),
     MEDIUM(
         "Médio (recomendado)",
-        "Início em ~2,5 seg, guarda 50 seg à frente. Equilíbrio entre atraso e estabilidade — valores por omissão do reprodutor.",
-        minBufferMs = 50_000,
-        maxBufferMs = 50_000,
-        bufferForPlaybackMs = 2_500,
-        bufferForPlaybackAfterRebufferMs = 5_000,
-        liveTargetOffsetMs = 8_000
+        "Guarda 10 segundos antes de começar. Bom equilíbrio entre atraso e estabilidade.",
+        delaySeconds = 10
     ),
     HIGH(
         "Alto",
-        "Início em ~5 seg, guarda até 90 seg à frente. Reduz interrupções em ligações instáveis, à custa de mais atraso em relação ao direto.",
-        minBufferMs = 30_000,
-        maxBufferMs = 90_000,
-        bufferForPlaybackMs = 5_000,
-        bufferForPlaybackAfterRebufferMs = 8_000,
-        liveTargetOffsetMs = 20_000
+        "Guarda 20 segundos antes de começar. Reduz interrupções em ligações instáveis, à custa de mais atraso em relação ao direto.",
+        delaySeconds = 20
     ),
-    // Field values here are placeholders — the real numbers come from the user-entered seconds
-    // (see SourceRepository.getEffectiveBufferSettings()), not from this enum constant.
+    // Placeholder — the real value comes from the user-entered seconds (see
+    // SourceRepository.getEffectiveBufferSettings()), not from this enum constant.
     CUSTOM(
         "Personalizado",
-        "Define o teu próprio tempo de buffer/atraso em segundos.",
-        minBufferMs = 0,
-        maxBufferMs = 0,
-        bufferForPlaybackMs = 0,
-        bufferForPlaybackAfterRebufferMs = 0,
-        liveTargetOffsetMs = 0
+        "Define o teu próprio tempo de atraso em segundos.",
+        delaySeconds = 0
     );
 
     companion object {
         fun fromName(name: String?): BufferMode =
             values().find { it.name == name } ?: MEDIUM
+
+        /** Derives the full set of player-facing buffer values from a single delay figure, so
+         * every BufferMode (including CUSTOM, from the user's own seconds input) is built the
+         * same consistent way. ExoPlayer's DefaultLoadControl requires minBufferMs to be at
+         * least as large as bufferForPlaybackAfterRebufferMs (and maxBufferMs at least
+         * minBufferMs) — building minBuffer/maxBuffer FROM afterRebuffer, rather than from the
+         * raw target independently, is what keeps that always true regardless of delaySeconds. */
+        fun buildSettings(delaySeconds: Int): BufferSettings {
+            val target = (delaySeconds.coerceAtLeast(1)) * 1_000
+            val afterRebuffer = target + 2_000
+            val minBuffer = afterRebuffer + 1_000
+            val maxBuffer = minBuffer + target
+            return BufferSettings(
+                minBufferMs = minBuffer,
+                maxBufferMs = maxBuffer,
+                bufferForPlaybackMs = target,
+                bufferForPlaybackAfterRebufferMs = afterRebuffer,
+                liveTargetOffsetMs = target.toLong()
+            )
+        }
     }
 }
 
-/** The actual numeric buffer configuration to hand to the player — either a preset BufferMode's
- * fixed values, or derived from the user's custom seconds input. See
+/** The actual numeric buffer configuration to hand to the player — derived from a BufferMode's
+ * delaySeconds (or the user's custom seconds input) via BufferMode.buildSettings(). See
  * SourceRepository.getEffectiveBufferSettings(). */
 data class BufferSettings(
     val minBufferMs: Int,

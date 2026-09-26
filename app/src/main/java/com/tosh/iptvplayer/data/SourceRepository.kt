@@ -120,28 +120,13 @@ class SourceRepository(private val context: Context) {
         prefs.edit().putInt(PREF_CUSTOM_BUFFER_SECONDS, seconds.coerceIn(1, 300)).apply()
     }
 
-    /** Resolves the currently selected buffer mode into concrete numbers for the player: either
-     * a preset's fixed values, or values derived from the user's custom seconds input. */
+    /** Resolves the currently selected buffer mode into concrete numbers for the player — a
+     * preset's fixed delay, or the user's custom seconds input, both built the same consistent
+     * way via BufferMode.buildSettings(). */
     fun getEffectiveBufferSettings(): BufferSettings {
         val mode = getBufferMode()
-        return if (mode == BufferMode.CUSTOM) {
-            val ms = getCustomBufferSeconds().coerceIn(1, 300) * 1000
-            BufferSettings(
-                minBufferMs = ms,
-                maxBufferMs = ms,
-                bufferForPlaybackMs = minOf(2_500, ms),
-                bufferForPlaybackAfterRebufferMs = minOf(5_000, ms),
-                liveTargetOffsetMs = ms.toLong()
-            )
-        } else {
-            BufferSettings(
-                mode.minBufferMs,
-                mode.maxBufferMs,
-                mode.bufferForPlaybackMs,
-                mode.bufferForPlaybackAfterRebufferMs,
-                mode.liveTargetOffsetMs
-            )
-        }
+        val delaySeconds = if (mode == BufferMode.CUSTOM) getCustomBufferSeconds() else mode.delaySeconds
+        return BufferMode.buildSettings(delaySeconds)
     }
 
     fun programmesFor(tvgId: String?): List<EpgProgramme> {

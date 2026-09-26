@@ -24,13 +24,40 @@ class VpnRepository(private val context: Context) {
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
 
-    private val prefs = EncryptedSharedPreferences.create(
-        context,
-        "vpn_secure_prefs",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs = createEncryptedPrefs()
+
+    /** EncryptedSharedPreferences can end up unreadable even though the file and Keystore key
+     * both still exist — e.g. after "clear storage" wipes the prefs file but an old Keystore key
+     * entry lingers, or the OS's keystore gets reset independently of app data. When that
+     * happens decrypting throws (AEADBadTagException / KeyStoreException), and since the
+     * content can never be decrypted either way, the only way forward is to wipe the corrupted
+     * prefs file and stale key and start fresh — the alternative is the app never being able to
+     * launch again at all, since this constructor runs from Application.onCreate(). */
+    private fun createEncryptedPrefs(): android.content.SharedPreferences {
+        return runCatching {
+            EncryptedSharedPreferences.create(
+                context,
+                PREFS_FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrElse {
+            context.deleteSharedPreferences(PREFS_FILE_NAME)
+            runCatching {
+                val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore")
+                keyStore.load(null)
+                keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+            }
+            EncryptedSharedPreferences.create(
+                context,
+                PREFS_FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+    }
 
     private val backend: GoBackend by lazy { GoBackend(context) }
 
@@ -128,6 +155,7 @@ class VpnRepository(private val context: Context) {
 
     companion object {
         private const val TUNNEL_NAME = "iptvplayer_wg"
+        private const val PREFS_FILE_NAME = "vpn_secure_prefs"
         private const val PREF_PROFILES_JSON = "profiles_json"
         private const val PREF_SELECTED_ID = "selected_profile_id"
         private const val PREF_LEGACY_CONFIG_TEXT = "config_text"

@@ -117,6 +117,20 @@ class FavoritesActivity : AppCompatActivity() {
                 adapter.notifyDataSetChanged()
             }
         }
+
+        // Runs on every creation of this screen, same as MainActivity's own equivalent check —
+        // not gated by how/why it was created, so it correctly covers being opened directly
+        // (Favoritos as the default screen), via in-app navigation, or restored by the system.
+        // repository.refreshAllEpg() already only does real work if a sync is actually due, so
+        // calling it here too (even shortly after MainActivity's own check already ran) is a
+        // harmless no-op in the common case, not duplicate work.
+        lifecycleScope.launch {
+            runCatching {
+                repository.refreshAllEpg()
+                applyFilter(binding.searchInput.text?.toString().orEmpty())
+                adapter.notifyDataSetChanged()
+            }
+        }
     }
 
     private fun applyFilter(query: String) {
@@ -134,6 +148,10 @@ class FavoritesActivity : AppCompatActivity() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(binding.searchInput.windowToken, 0)
         updateVpnMenuIcon()
+        // Same reasoning as MainActivity: a sync triggered elsewhere (Definições, the automatic
+        // background check) updates the shared EPG cache correctly, but these rows were never
+        // told to redraw while this screen wasn't visible.
+        adapter.notifyDataSetChanged()
     }
 
     private fun openPlayer(channel: Channel) {

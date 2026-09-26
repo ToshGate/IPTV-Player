@@ -240,6 +240,16 @@ class SettingsActivity : AppCompatActivity(), AddSourceDialogFragment.Listener {
         binding.btnEpgSyncNow.isEnabled = false
         lifecycleScope.launch {
             val result = runCatching { repository.refreshAllEpg(force = true) }
+            // runCatching also catches CancellationException, which it must never swallow — it's
+            // how coroutine cancellation propagates (e.g. leaving this screen mid-sync). The
+            // underlying network fetch/DB write, already in flight as a blocking call, often
+            // still completes anyway, which is why the sync visibly "worked" despite this
+            // showing up as a failure — rethrowing it here instead of surfacing an error toast
+            // is both the correct fix and the honest one.
+            val exception = result.exceptionOrNull()
+            if (exception is kotlinx.coroutines.CancellationException) {
+                throw exception
+            }
             binding.btnEpgSyncNow.isEnabled = true
             updateLastSyncSubtitle()
             result.onFailure {

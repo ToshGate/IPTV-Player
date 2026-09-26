@@ -62,6 +62,17 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    /** Like runCatching, but never swallows CancellationException — doing so breaks coroutine
+     * cancellation's structured concurrency contract, and here specifically was surfacing "Job
+     * was cancelled" as if it were a genuine sync failure (e.g. when leaving a screen mid-sync),
+     * even though the underlying blocking network/DB call had often already completed by then. */
+    private suspend fun <T> runCatchingIgnoringCancellation(block: suspend () -> T): Result<T> {
+        val result = runCatching { block() }
+        val exception = result.exceptionOrNull()
+        if (exception is kotlinx.coroutines.CancellationException) throw exception
+        return result
+    }
+
     private var allChannels: List<Channel> = emptyList()
     private var groupedChannels: Map<String, List<Channel>> = emptyMap()
     private var favoriteNames: Set<String> = emptySet()
@@ -81,6 +92,10 @@ class MainActivity : AppCompatActivity() {
         // exactly that bounce-back loop. An explicit "don't redirect" extra sidesteps the race.
         val skipDefaultScreenRedirect = intent.getBooleanExtra(EXTRA_SKIP_DEFAULT_SCREEN_REDIRECT, false)
         if (!skipDefaultScreenRedirect && isTaskRoot && repository.getDefaultScreen() == DefaultScreen.FAVORITES) {
+            // FavoritesActivity runs the same automatic EPG check itself, on its own creation —
+            // no need to signal it from here; repository.refreshAllEpg() is already the one
+            // shared place that logic lives, and its own due-check makes it a harmless no-op if
+            // called again too soon (e.g. if the user later navigates here manually too).
             startActivity(Intent(this, FavoritesActivity::class.java))
             finish()
             @Suppress("DEPRECATION")
@@ -123,12 +138,12 @@ class MainActivity : AppCompatActivity() {
                 // Re-fetch each source's playlist so channel additions/removals/renames on the
                 // provider's side actually show up — previously channels were only ever fetched
                 // once, when the source was first added.
-                runCatching { repository.refreshAllChannels() }
+                runCatchingIgnoringCancellation { repository.refreshAllChannels() }
                 // Deliberately NOT force = true for EPG: pull-to-refresh should still respect the
                 // sync interval chosen in Definições. Forcing a sync from every app screen would
                 // bypass the whole point of that setting. A manual, always-force sync is
                 // available from Definições instead.
-                runCatching { repository.refreshAllEpg() }
+                runCatchingIgnoringCancellation { repository.refreshAllEpg() }
                 binding.swipeRefresh.isRefreshing = false
                 applyFilter(binding.searchInput.text?.toString().orEmpty())
                 adapter.notifyDataSetChanged()
@@ -156,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         lifecycleScope.launch {
-            runCatching { 
+            runCatchingIgnoringCancellation { 
                 repository.refreshAllEpg()
                 // Re-apply filter after EPG load to pick the best representatives
                 applyFilter(binding.searchInput.text?.toString().orEmpty())
@@ -175,7 +190,7 @@ class MainActivity : AppCompatActivity() {
         if (!hasCheckedForUpdateThisSession) {
             hasCheckedForUpdateThisSession = true
             lifecycleScope.launch {
-                runCatching {
+                runCatchingIgnoringCancellation {
                     val updateChecker = com.tosh.iptvplayer.data.UpdateChecker(this@MainActivity)
                     updateChecker.checkForUpdate()?.let { update ->
                         showUpdateDialog(updateChecker, update)
@@ -282,6 +297,12 @@ class MainActivity : AppCompatActivity() {
         // Picks up state changes made elsewhere — e.g. connecting/disconnecting from the
         // dedicated VPN screen, or picking a different selected profile there.
         updateVpnMenuIcon()
+
+        // Same DiffUtil blind spot noted above for favorites/EPG: if a sync was triggered from
+        // a different screen (Definições' manual sync, or the automatic background check) while
+        // this one wasn't visible, the underlying cache updated correctly but these rows were
+        // never told to redraw. Returning here is the natural point to catch up.
+        adapter.notifyDataSetChanged()
 
         // Returning to this screen (e.g. via the star toggle) shouldn't leave the search field
         // focused/keyboard open just because it was focused before navigating away — an Activity
