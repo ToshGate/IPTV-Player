@@ -274,9 +274,19 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
             R.id.action_favorites -> {
-                startActivity(Intent(this, FavoritesActivity::class.java))
+                // Symmetric with FavoritesActivity.goToMainScreen(): finishing here too, with the
+                // same CLEAR_TOP/SINGLE_TOP pairing, keeps the back stack in the same shape
+                // regardless of which direction got you here. The explicit slide direction below
+                // no longer depends on that shape either way — it's fixed per navigation
+                // direction, not left to the system's own (stack-state-dependent) default.
+                startActivity(
+                    Intent(this, FavoritesActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    }
+                )
+                finish()
                 @Suppress("DEPRECATION")
-                overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+                overridePendingTransition(R.anim.slide_in_from_right, R.anim.slide_out_to_left)
                 return true
             }
             R.id.action_settings -> {

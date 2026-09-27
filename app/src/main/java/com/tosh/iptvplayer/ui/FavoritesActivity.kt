@@ -188,8 +188,10 @@ class FavoritesActivity : AppCompatActivity() {
         }
         startActivity(intent)
         finish()
+        // Fixed direction (opposite of MainActivity's own slide), independent of back-stack
+        // state — see MainActivity's equivalent comment.
         @Suppress("DEPRECATION")
-        overridePendingTransition(R.anim.fade_in, R.anim.fade_out)
+        overridePendingTransition(R.anim.slide_in_from_left, R.anim.slide_out_to_right)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {

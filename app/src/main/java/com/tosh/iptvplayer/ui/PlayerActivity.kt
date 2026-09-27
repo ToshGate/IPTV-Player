@@ -37,6 +37,14 @@ class PlayerActivity : AppCompatActivity() {
     private var currentProgrammes: List<com.tosh.iptvplayer.model.EpgProgramme> = emptyList()
     private var isScreenLocked = false
     private lateinit var gestureController: PlayerGestureController
+    // Kept at class level (not local to setupPlayer()) so the PREVIOUS client's connections can
+    // be explicitly torn down before/when replacing it — see closeHttpClient(). Left as a plain
+    // local variable, a stale client's pooled connection to the stream server can otherwise
+    // linger open for minutes (OkHttp's default keep-alive) after the channel/player is gone,
+    // which some IPTV providers read as "still connected" and use to lock that IP out of
+    // starting a new stream in the meantime — most noticeable switching VPN on/off or between
+    // networks, since each switch looks like a distinct client to the server either way.
+    private var httpClient: okhttp3.OkHttpClient? = null
 
     private val updateProgressAction = object : Runnable {
         override fun run() {
@@ -283,6 +291,17 @@ class PlayerActivity : AppCompatActivity() {
         setupEpgPanel(tvgId)
     }
 
+    /** Explicitly evicts pooled connections and shuts down the dispatcher for the current
+     * httpClient, if any — see the field's own comment for why this matters. Safe to call
+     * whenever a client is about to be replaced or is no longer needed. */
+    private fun closeHttpClient() {
+        httpClient?.let { client ->
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdown()
+        }
+        httpClient = null
+    }
+
     private fun setupPlayer(streamUrl: String) {
         val bufferSettings = repository.getEffectiveBufferSettings()
         val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
@@ -306,8 +325,10 @@ class PlayerActivity : AppCompatActivity() {
         // channel that may have worked fine without it. Without a way to test against real
         // provider infrastructure, sending a guessed header that might be wrong is worse than
         // sending none.
-        val httpClient = okhttp3.OkHttpClient.Builder().build()
-        val dataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(httpClient)
+        closeHttpClient()
+        val newHttpClient = okhttp3.OkHttpClient.Builder().build()
+        httpClient = newHttpClient
+        val dataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(newHttpClient)
             .setUserAgent("VLC/3.0.18 LibVLC/3.0.18")
         val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this)
             .setDataSourceFactory(dataSourceFactory)
@@ -976,6 +997,7 @@ class PlayerActivity : AppCompatActivity() {
         runCatching { unregisterReceiver(screenOffReceiver) }
         player?.release()
         player = null
+        closeHttpClient()
     }
 
     private fun isInPictureInPictureModeCompat(): Boolean =

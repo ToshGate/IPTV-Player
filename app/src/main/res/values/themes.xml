@@ -14,6 +14,12 @@
         <item name="android:statusBarColor">@color/background</item>
         <item name="android:navigationBarColor">@color/background</item>
         <item name="android:windowLightStatusBar" tools:targetApi="23">@bool/light_status_bar_icons</item>
+        <!-- Android 12+ shows its own system-level "starting window" whenever a screen is
+             created, entirely separate from our own fade transition — without this, it falls
+             back to a reserve colour that may not match the app, showing as a brief black flash
+             right around the same moment as the fade. Matching it to our own background makes
+             that moment invisible even if it can't be eliminated outright. -->
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@color/background</item>
 
         <!-- NOTE: deliberately NOT overriding shapeAppearanceCornerMedium/Small at the theme
              root. Those are global Material slots also read by system-level popups (e.g. the

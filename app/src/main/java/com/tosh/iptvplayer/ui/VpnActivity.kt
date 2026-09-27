@@ -28,15 +28,25 @@ class VpnActivity : AppCompatActivity() {
     private val pickConfigFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@registerForActivityResult
         runCatching {
-            val text = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            val rawText = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 ?: throw IllegalStateException("Não foi possível ler o ficheiro")
+            // Some panels/editors export .conf files with a UTF-8 BOM at the very start, or
+            // Windows-style CRLF line endings — WireGuard's strict parser can reject either,
+            // which looks like "sometimes fails" since it depends entirely on which tool
+            // produced that particular file. Both are safe, lossless to normalize away here.
+            val text = rawText.removePrefix("\uFEFF").replace("\r\n", "\n")
             val name = queryDisplayName(uri) ?: "Perfil ${vpnRepository.getProfiles().size + 1}"
             vpnRepository.addProfile(name, text)
         }.onSuccess {
             refreshUi()
             Toast.makeText(this, "Perfil importado", Toast.LENGTH_SHORT).show()
         }.onFailure {
-            Toast.makeText(this, "Ficheiro de configuração inválido", Toast.LENGTH_LONG).show()
+            // Show the real reason instead of a generic "invalid" — this is exactly what's
+            // needed to tell a genuinely malformed file apart from something we can fix on our
+            // end (like the BOM/CRLF cases above), without needing back-and-forth to diagnose.
+            Toast.makeText(
+                this, "Ficheiro de configuração inválido: ${it.message}", Toast.LENGTH_LONG
+            ).show()
         }
     }
 
