@@ -178,7 +178,7 @@ class SourceRepository(private val context: Context) {
             !embeddedEpgUrl.isNullOrBlank() -> {
                 // The playlist itself advertises an EPG (url-tvg / x-tvg-url) and the user
                 // didn't set one manually: use it automatically and remember it for future syncs.
-                loadEpg(embeddedEpgUrl!!, isFile = false)
+                loadEpg(embeddedEpgUrl, isFile = false)
                 db.sourceDao().updateEpg(sourceId, embeddedEpgUrl, false)
             }
             !playlistIsFile -> {
@@ -354,7 +354,7 @@ class SourceRepository(private val context: Context) {
             val request = Request.Builder().url(location).header("Accept-Encoding", "identity").build()
             val response = http.newCall(request).execute()
             if (!response.isSuccessful) error("Falha ao descarregar: HTTP ${response.code}")
-            response.body?.byteStream() ?: error("Resposta vazia de $location")
+            response.body.byteStream()
         }
         return maybeGunzip(raw)
     }

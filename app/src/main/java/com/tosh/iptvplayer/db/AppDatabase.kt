@@ -191,7 +191,7 @@ abstract class AppDatabase : RoomDatabase() {
                     // Only as a last-resort safety net for a *downgrade* (e.g. a debug build
                     // pointing at a DB created by a newer version) — upgrades always go through
                     // the real migrations above, so existing sources/favorites/EPG survive.
-                    .fallbackToDestructiveMigrationOnDowngrade()
+                    .fallbackToDestructiveMigrationOnDowngrade(true)
                     .build().also { INSTANCE = it }
             }
     }

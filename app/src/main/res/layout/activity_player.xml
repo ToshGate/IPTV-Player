@@ -103,6 +103,21 @@
                 tools:text="72%" />
         </LinearLayout>
 
+        <TextView
+            android:id="@+id/reconnectLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_control_pill_small"
+            android:fontFamily="@font/sora_semibold"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:visibility="gone"
+            tools:text="A reconectar…"
+            tools:visibility="visible" />
+
         <FrameLayout
             android:id="@+id/controlsOverlay"
             android:layout_width="match_parent"

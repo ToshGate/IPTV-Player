@@ -12,7 +12,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.StringReader
+import java.security.KeyStore
 import java.util.UUID
 
 /** Several imported WireGuard configurations can be stored side by side — securely (each
@@ -20,44 +22,7 @@ import java.util.UUID
  * player's quick-toggle both act on. */
 class VpnRepository(private val context: Context) {
 
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
-
-    private val prefs = createEncryptedPrefs()
-
-    /** EncryptedSharedPreferences can end up unreadable even though the file and Keystore key
-     * both still exist — e.g. after "clear storage" wipes the prefs file but an old Keystore key
-     * entry lingers, or the OS's keystore gets reset independently of app data. When that
-     * happens decrypting throws (AEADBadTagException / KeyStoreException), and since the
-     * content can never be decrypted either way, the only way forward is to wipe the corrupted
-     * prefs file and stale key and start fresh — the alternative is the app never being able to
-     * launch again at all, since this constructor runs from Application.onCreate(). */
-    private fun createEncryptedPrefs(): android.content.SharedPreferences {
-        return runCatching {
-            EncryptedSharedPreferences.create(
-                context,
-                PREFS_FILE_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }.getOrElse {
-            context.deleteSharedPreferences(PREFS_FILE_NAME)
-            runCatching {
-                val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore")
-                keyStore.load(null)
-                keyStore.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
-            }
-            EncryptedSharedPreferences.create(
-                context,
-                PREFS_FILE_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }
-    }
+    private val store = SecureStore(context, STORE_FILE_NAME, STORE_KEY_ALIAS)
 
     private val backend: GoBackend by lazy { GoBackend(context) }
 
@@ -70,11 +35,11 @@ class VpnRepository(private val context: Context) {
     }
 
     init {
-        migrateLegacySingleProfileIfNeeded()
+        migrateFromEncryptedSharedPreferences()
     }
 
     fun getProfiles(): List<VpnProfile> {
-        val array = JSONArray(prefs.getString(PREF_PROFILES_JSON, "[]"))
+        val array = JSONArray(store.getString(PREF_PROFILES_JSON) ?: "[]")
         return (0 until array.length()).map { i ->
             val obj = array.getJSONObject(i)
             VpnProfile(obj.getString("id"), obj.getString("name"), obj.getString("config"))
@@ -98,14 +63,15 @@ class VpnRepository(private val context: Context) {
         val remaining = getProfiles().filterNot { it.id == id }
         saveProfiles(remaining)
         if (getSelectedProfileId() == id) {
-            prefs.edit().putString(PREF_SELECTED_ID, remaining.firstOrNull()?.id).apply()
+            val next = remaining.firstOrNull()?.id
+            if (next != null) store.putString(PREF_SELECTED_ID, next) else store.remove(PREF_SELECTED_ID)
         }
     }
 
-    fun getSelectedProfileId(): String? = prefs.getString(PREF_SELECTED_ID, null)
+    fun getSelectedProfileId(): String? = store.getString(PREF_SELECTED_ID)
 
     fun setSelectedProfileId(id: String) {
-        prefs.edit().putString(PREF_SELECTED_ID, id).apply()
+        store.putString(PREF_SELECTED_ID, id)
     }
 
     fun getSelectedProfile(): VpnProfile? {
@@ -137,28 +103,59 @@ class VpnRepository(private val context: Context) {
         profiles.forEach { p ->
             array.put(JSONObject().put("id", p.id).put("name", p.name).put("config", p.configText))
         }
-        prefs.edit().putString(PREF_PROFILES_JSON, array.toString()).apply()
+        store.putString(PREF_PROFILES_JSON, array.toString())
     }
 
-    /** One-time upgrade from the earlier single-profile version of this repository — a person
-     * who already imported a config before this change shouldn't lose it. */
-    private fun migrateLegacySingleProfileIfNeeded() {
-        val legacyText = prefs.getString(PREF_LEGACY_CONFIG_TEXT, null) ?: return
-        if (getProfiles().isNotEmpty()) {
-            prefs.edit().remove(PREF_LEGACY_CONFIG_TEXT).remove(PREF_LEGACY_CONFIG_NAME).apply()
-            return
+    /** One-time move of already-saved profiles out of the old EncryptedSharedPreferences file
+     * (that library is deprecated) into [SecureStore]. Runs on every launch but is a no-op once
+     * the old file is gone. Never allowed to throw: this runs from Application.onCreate(), and
+     * anything unreadable in the old file could not have been used again anyway. The deprecated
+     * classes are used here, and only here, on purpose — this whole function (and the
+     * security-crypto dependency) can be deleted once everyone has upgraded past this version. */
+    @Suppress("DEPRECATION")
+    private fun migrateFromEncryptedSharedPreferences() {
+        runCatching {
+            val legacyFile = File(context.applicationInfo.dataDir, "shared_prefs/$LEGACY_PREFS_FILE_NAME.xml")
+            if (!legacyFile.exists()) return
+
+            runCatching {
+                val masterKey = MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                val legacy = EncryptedSharedPreferences.create(
+                    context,
+                    LEGACY_PREFS_FILE_NAME,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+                val profiles = legacy.getString(PREF_PROFILES_JSON, null)
+                val selected = legacy.getString(PREF_SELECTED_ID, null)
+                // Only fill an empty new store, so a half-finished earlier attempt can't
+                // overwrite anything already migrated.
+                if (profiles != null && store.getString(PREF_PROFILES_JSON) == null) {
+                    store.putString(PREF_PROFILES_JSON, profiles)
+                    if (selected != null) store.putString(PREF_SELECTED_ID, selected)
+                }
+            }
+
+            context.deleteSharedPreferences(LEGACY_PREFS_FILE_NAME)
+            runCatching {
+                val keyStore = KeyStore.getInstance("AndroidKeyStore")
+                keyStore.load(null)
+                // The alias EncryptedSharedPreferences' MasterKey uses by default.
+                keyStore.deleteEntry(LEGACY_MASTER_KEY_ALIAS)
+            }
         }
-        val legacyName = prefs.getString(PREF_LEGACY_CONFIG_NAME, null) ?: "Configuração importada"
-        runCatching { addProfile(legacyName, legacyText) }
-        prefs.edit().remove(PREF_LEGACY_CONFIG_TEXT).remove(PREF_LEGACY_CONFIG_NAME).apply()
     }
 
     companion object {
         private const val TUNNEL_NAME = "iptvplayer_wg"
-        private const val PREFS_FILE_NAME = "vpn_secure_prefs"
+        private const val STORE_FILE_NAME = "vpn_profiles_store"
+        private const val STORE_KEY_ALIAS = "iptvplayer_vpn_store_key"
         private const val PREF_PROFILES_JSON = "profiles_json"
         private const val PREF_SELECTED_ID = "selected_profile_id"
-        private const val PREF_LEGACY_CONFIG_TEXT = "config_text"
-        private const val PREF_LEGACY_CONFIG_NAME = "config_name"
+        private const val LEGACY_PREFS_FILE_NAME = "vpn_secure_prefs"
+        private const val LEGACY_MASTER_KEY_ALIAS = "_androidx_security_master_key_"
     }
 }

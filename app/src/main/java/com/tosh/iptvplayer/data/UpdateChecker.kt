@@ -33,7 +33,7 @@ class UpdateChecker(private val context: Context) {
                 .build()
             val response = http.newCall(request).execute()
             if (!response.isSuccessful) return@withContext null
-            val body = response.body?.string() ?: return@withContext null
+            val body = response.body.string()
             val json = JSONObject(body)
 
             val remoteVersion = json.optString("tag_name").removePrefix("v").trim()
@@ -100,7 +100,7 @@ class UpdateChecker(private val context: Context) {
             val request = Request.Builder().url(updateInfo.downloadUrl).build()
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
-                val body = response.body ?: return@withContext null
+                val body = response.body
                 destFile.outputStream().use { output ->
                     body.byteStream().use { input -> input.copyTo(output) }
                 }

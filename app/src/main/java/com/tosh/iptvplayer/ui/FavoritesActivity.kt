@@ -175,7 +175,7 @@ class FavoritesActivity : AppCompatActivity() {
                 putStringArrayListExtra(PlayerActivity.EXTRA_QUALITY_URLS, ArrayList(qualities.map { it.streamUrl }))
                 putStringArrayListExtra(PlayerActivity.EXTRA_QUALITY_IDS, ArrayList(qualities.map { it.tvgId ?: "" }))
             }
-            startActivity(intent)
+            startPlayerSafely(intent)
         }
     }
 

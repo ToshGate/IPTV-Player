@@ -46,6 +46,20 @@ class PlayerActivity : AppCompatActivity() {
     // networks, since each switch looks like a distinct client to the server either way.
     private var httpClient: okhttp3.OkHttpClient? = null
 
+    // --- Automatic reconnection after a network failure ------------------------------------
+    // For a live progressive stream ExoPlayer keeps retrying a broken connection for only about
+    // 15 seconds, then raises a fatal error and goes idle on the last frame — and nothing brought
+    // it back once the network returned. So connection-type errors (and a rebuffer that never
+    // ends) are recovered here: if the device is offline we wait for the network, and if it is
+    // online but the stream is unreachable we retry a few times with backoff, then give up.
+    private var reconnectAttempts = 0
+    private var hasPlayedOnce = false
+    private var lastErrorName = ""
+    private var rebufferWatchdogMs = 30_000L
+    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    private val reconnectAction = Runnable { reconnectNow() }
+    private val rebufferWatchdogAction = Runnable { onRebufferStuck() }
+
     private val updateProgressAction = object : Runnable {
         override fun run() {
             updateProgress()
@@ -145,7 +159,16 @@ class PlayerActivity : AppCompatActivity() {
         binding.btnPlayPause.setOnClickListener {
             showControls()
             player?.let {
-                if (it.isPlaying) it.pause() else it.play()
+                when {
+                    it.isPlaying -> it.pause()
+                    // Dead after an error (e.g. reconnecting gave up): play tries again.
+                    it.playbackState == androidx.media3.common.Player.STATE_IDLE && it.playerError != null -> {
+                        it.playWhenReady = true
+                        reconnectAttempts = 0
+                        reconnectNow()
+                    }
+                    else -> it.play()
+                }
             }
         }
 
@@ -291,6 +314,159 @@ class PlayerActivity : AppCompatActivity() {
         setupEpgPanel(tvgId)
     }
 
+    private fun isRecoverableError(error: androidx.media3.common.PlaybackException): Boolean =
+        when (error.errorCode) {
+            androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+            androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+            androidx.media3.common.PlaybackException.ERROR_CODE_TIMEOUT,
+            androidx.media3.common.PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> true
+            // Bad HTTP status (401/403/404/5xx), unsupported formats, etc.: retrying can't fix
+            // these, and for a provider that limits streams per IP it could make things worse.
+            else -> false
+        }
+
+    private fun hasInternet(): Boolean {
+        val cm = getSystemService(android.net.ConnectivityManager::class.java) ?: return true
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    /** Entry point for anything that means "the connection to the stream is gone". */
+    private fun recoverFromConnectionLoss() {
+        val p = player ?: return
+        // Paused by the person, or by the screen turning off: don't contact the server on our
+        // own — pressing play brings the stream back (see the play button).
+        if (!p.playWhenReady) return
+        binding.root.removeCallbacks(rebufferWatchdogAction)
+
+        if (!hasInternet()) {
+            showReconnectLabel("Sem ligação. A aguardar pela rede…")
+            waitForNetwork()
+            return
+        }
+        if (reconnectAttempts >= RECONNECT_DELAYS_MS.size) {
+            giveUpReconnecting()
+            return
+        }
+        showReconnectLabel("A reconectar…")
+        scheduleReconnect(RECONNECT_DELAYS_MS[reconnectAttempts])
+        reconnectAttempts++
+    }
+
+    private fun scheduleReconnect(delayMs: Long) {
+        binding.root.removeCallbacks(reconnectAction)
+        binding.root.postDelayed(reconnectAction, delayMs)
+    }
+
+    private fun reconnectNow() {
+        val p = player ?: return
+        stopWaitingForNetwork()
+        binding.root.removeCallbacks(reconnectAction)
+        if (!p.playWhenReady) {
+            hideReconnectLabel()
+            return
+        }
+        // Pooled connections are dead sockets after an outage; reusing one would just fail the
+        // first request again.
+        httpClient?.connectionPool?.evictAll()
+        // prepare() only acts on an idle player. After a fatal error it already is; a rebuffer
+        // that never ends (watchdog) needs an explicit stop() first.
+        if (p.playbackState != androidx.media3.common.Player.STATE_IDLE) p.stop()
+        p.seekToDefaultPosition()
+        p.prepare()
+    }
+
+    /** Offline: reconnect as soon as the network is back, and also poll slowly in case the system
+     * never reports the network as "validated" (captive portals, restrictive DNS) although the
+     * stream itself is reachable. */
+    private fun waitForNetwork() {
+        scheduleReconnect(WAIT_POLL_MS)
+        if (networkCallback != null) return
+        val cm = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                caps: android.net.NetworkCapabilities
+            ) {
+                val online = caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (!online) return
+                // Delivered on a ConnectivityManager thread.
+                runOnUiThread {
+                    if (networkCallback !== this) return@runOnUiThread
+                    stopWaitingForNetwork()
+                    showReconnectLabel("A reconectar…")
+                    // Let DNS and the route settle before the first attempt.
+                    scheduleReconnect(NETWORK_BACK_DELAY_MS)
+                }
+            }
+        }
+        networkCallback = callback
+        try {
+            cm.registerDefaultNetworkCallback(callback)
+        } catch (e: RuntimeException) {
+            networkCallback = null // the slow poll above still covers this case
+        }
+    }
+
+    private fun stopWaitingForNetwork() {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        runCatching {
+            getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(callback)
+        }
+    }
+
+    /** Only counts once the channel has played: a rebuffer during the very first fill can
+     * legitimately take as long as the chosen buffer. */
+    private fun onRebufferStuck() {
+        val p = player ?: return
+        if (hasPlayedOnce && p.playWhenReady &&
+            p.playbackState == androidx.media3.common.Player.STATE_BUFFERING
+        ) {
+            recoverFromConnectionLoss()
+        }
+    }
+
+    private fun onConnectionRecovered() {
+        reconnectAttempts = 0
+        binding.root.removeCallbacks(reconnectAction)
+        stopWaitingForNetwork()
+        hideReconnectLabel()
+    }
+
+    private fun giveUpReconnecting() {
+        reconnectAttempts = 0
+        hideReconnectLabel()
+        val detail = if (lastErrorName.isNotEmpty()) " ($lastErrorName)" else ""
+        android.widget.Toast.makeText(
+            this,
+            "Não foi possível reconectar ao canal$detail. Toca em reproduzir para tentar outra vez.",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun showReconnectLabel(text: String) {
+        binding.reconnectLabel.text = text
+        binding.reconnectLabel.visibility = android.view.View.VISIBLE
+    }
+
+    private fun hideReconnectLabel() {
+        binding.reconnectLabel.visibility = android.view.View.GONE
+    }
+
+    private fun resetReconnect() {
+        binding.root.removeCallbacks(reconnectAction)
+        binding.root.removeCallbacks(rebufferWatchdogAction)
+        stopWaitingForNetwork()
+        reconnectAttempts = 0
+        hasPlayedOnce = false
+        hideReconnectLabel()
+    }
+
     /** Explicitly evicts pooled connections and shuts down the dispatcher for the current
      * httpClient, if any — see the field's own comment for why this matters. Safe to call
      * whenever a client is about to be replaced or is no longer needed. */
@@ -304,6 +480,9 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun setupPlayer(streamUrl: String) {
         val bufferSettings = repository.getEffectiveBufferSettings()
+        resetReconnect()
+        // Longest a rebuffer should take (refilling to the after-rebuffer threshold) plus margin.
+        rebufferWatchdogMs = bufferSettings.bufferForPlaybackAfterRebufferMs + REBUFFER_EXTRA_MS
         val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 bufferSettings.minBufferMs,
@@ -336,6 +515,16 @@ class PlayerActivity : AppCompatActivity() {
         val exoPlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
+            // Media3 1.9.0+ changed two defaults that would alter behaviour here, so both are
+            // pinned to what this app always had: (1) a wake lock is now held by default, which
+            // needs the WAKE_LOCK permission this app doesn't declare — NONE keeps the old
+            // behaviour (the screen is already kept on via keepScreenOn below); (2) the player
+            // now raises a fatal error if it sits in READY without progressing for 10s. Some
+            // IPTV feeds freeze for close to that long before recovering on their own (as they
+            // did on older versions), so this gives them a much longer grace period rather than
+            // turning a recoverable freeze into a hard stop.
+            .setWakeMode(androidx.media3.common.C.WAKE_MODE_NONE)
+            .setStuckPlayingDetectionTimeoutMs(60_000)
             .build()
         binding.playerView.player = exoPlayer
         binding.playerView.useController = false // we draw our own minimal controls overlay
@@ -348,7 +537,27 @@ class PlayerActivity : AppCompatActivity() {
                 )
             }
 
+            override fun onPlaybackStateChanged(state: Int) {
+                binding.root.removeCallbacks(rebufferWatchdogAction)
+                when (state) {
+                    androidx.media3.common.Player.STATE_READY -> {
+                        hasPlayedOnce = true
+                        onConnectionRecovered()
+                    }
+                    androidx.media3.common.Player.STATE_BUFFERING ->
+                        if (hasPlayedOnce) binding.root.postDelayed(rebufferWatchdogAction, rebufferWatchdogMs)
+                }
+            }
+
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                lastErrorName = error.errorCodeName
+                // Only after the channel has played once: before that, a connection error means
+                // a wrong address or a server that's down, and the person should be told right
+                // away instead of watching "reconnecting" for half a minute.
+                if (hasPlayedOnce && isRecoverableError(error)) {
+                    recoverFromConnectionLoss()
+                    return
+                }
                 // Surface the real reason instead of the stream just silently never starting —
                 // this is exactly what's needed to tell "codec not supported" apart from a
                 // network/auth/timeout problem.
@@ -997,6 +1206,7 @@ class PlayerActivity : AppCompatActivity() {
         runCatching { unregisterReceiver(screenOffReceiver) }
         player?.release()
         player = null
+        if (::binding.isInitialized) resetReconnect()
         closeHttpClient()
     }
 
@@ -1004,6 +1214,12 @@ class PlayerActivity : AppCompatActivity() {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && isInPictureInPictureMode
 
     companion object {
+        // Waits between reconnect attempts while the device is online but the stream isn't.
+        private val RECONNECT_DELAYS_MS = longArrayOf(2_000L, 5_000L, 10_000L)
+        private const val NETWORK_BACK_DELAY_MS = 1_000L
+        private const val WAIT_POLL_MS = 20_000L
+        private const val REBUFFER_EXTRA_MS = 20_000L
+
         const val EXTRA_CHANNEL_NAME = "extra_channel_name"
         const val EXTRA_STREAM_URL = "extra_stream_url"
         const val EXTRA_TVG_ID = "extra_tvg_id"
